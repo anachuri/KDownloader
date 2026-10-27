@@ -57,6 +57,9 @@ kotlin {
         androidMain.dependencies {
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.compose.uiTooling)
+            implementation(libs.youtubedl.android.library)
+            implementation(libs.youtubedl.android.ffmpeg)
+            implementation(libs.youtubedl.android.aria2c)
         }
         commonMain.dependencies {
             implementation(libs.compose.runtime)

@@ -91,4 +91,37 @@ class YtDlpJvmTest {
         assertNull(parseProgressLine("${FILE_PREFIX}/tmp/video.mp4"))
         assertNull(parseProgressLine("${PROGRESS_PREFIX}incomplete"))
     }
+
+    @Test
+    fun explainsForbiddenDownloads() {
+        val message = describeYtDlpFailure(
+            listOf("ERROR: unable to download video data: HTTP Error 403: Forbidden"),
+            null,
+        )
+
+        assertTrue(message.contains("403"))
+        assertTrue(message.contains("desactualizado"))
+        assertTrue(message.contains("HTTP Error 403"), "the raw line must stay visible: $message")
+    }
+
+    @Test
+    fun explainsBrokenExtractors() {
+        val message = describeYtDlpFailure(
+            listOf("ERROR: [BiliBili] 16L411D7H5: Unable to extract initial state; please report this issue"),
+            null,
+        )
+
+        assertTrue(message.contains("Actualiza yt-dlp"), message)
+    }
+
+    @Test
+    fun keepsUnknownErrorsUnchanged() {
+        assertEquals("ERROR: something odd", describeYtDlpFailure(listOf("ERROR: something odd"), null))
+    }
+
+    @Test
+    fun fallsBackWhenNothingWasCaptured() {
+        assertEquals(YT_DLP_UNKNOWN_FAILURE, describeYtDlpFailure(emptyList(), null))
+        assertEquals("exit code 9", describeYtDlpFailure(emptyList(), "exit code 9"))
+    }
 }

@@ -2,9 +2,9 @@ package com.app.kdownloader.platform
 
 import kotlinx.coroutines.flow.Flow
 
-/** Message used by platforms that cannot spawn external processes. */
+/** Message used by platforms that cannot run yt-dlp at all. */
 const val YT_DLP_UNSUPPORTED_MESSAGE: String =
-    "La descarga con yt-dlp solo está disponible en la app de escritorio."
+    "La descarga no está disponible en esta plataforma."
 
 /**
  * Everything needed to build a single yt-dlp invocation.
@@ -22,14 +22,21 @@ data class DownloadRequest(
     val isAudioOnly: Boolean get() = audioFormat != null
 }
 
-/** Result of looking for the yt-dlp/ffmpeg binaries on the host system. */
+/** Result of looking for the yt-dlp/ffmpeg tooling on the host system. */
 data class YtDlpInfo(
     val platformSupported: Boolean,
     val executable: String? = null,
     val version: String? = null,
     val ffmpegAvailable: Boolean = false,
+    /** Human-readable reason when the tooling could not be prepared. */
+    val error: String? = null,
+    /**
+     * Location the user cannot change, shown instead of a folder picker. Android publishes
+     * finished downloads to the public `Downloads` collection, so a custom path is meaningless.
+     */
+    val fixedDownloadDirectory: String? = null,
 ) {
-    val available: Boolean get() = executable != null
+    val available: Boolean get() = executable != null && error == null
 }
 
 /** Events streamed while a yt-dlp process runs. */
@@ -54,7 +61,7 @@ sealed interface DownloadEvent {
     ) : DownloadEvent
 }
 
-/** True when the current platform can run yt-dlp as a child process (desktop JVM only). */
+/** True when the current platform can run yt-dlp (desktop JVM and Android). */
 expect val supportsYtDlpDownloads: Boolean
 
 /** Detects yt-dlp and ffmpeg without blocking the UI thread. */

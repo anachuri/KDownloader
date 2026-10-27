@@ -1139,15 +1139,25 @@ private fun DownloadActions(
             Column {
                 DownloadSummary(video = video, audio = audio)
                 Spacer(Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = directory,
-                    onValueChange = onDirectoryChange,
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    enabled = !isDownloading,
-                    shape = RoundedCornerShape(14.dp),
-                    label = { Text("Carpeta de destino") },
-                )
+                val fixedDirectory = info?.fixedDownloadDirectory
+                if (fixedDirectory != null) {
+                    Text(
+                        text = "Los archivos se guardan en $fixedDirectory",
+                        modifier = Modifier.fillMaxWidth(),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    OutlinedTextField(
+                        value = directory,
+                        onValueChange = onDirectoryChange,
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        enabled = !isDownloading,
+                        shape = RoundedCornerShape(14.dp),
+                        label = { Text("Carpeta de destino") },
+                    )
+                }
                 Spacer(Modifier.height(12.dp))
 
                 if (wide) {
@@ -1200,11 +1210,13 @@ private fun DownloadActions(
 @Composable
 private fun DownloadToolStatus(info: YtDlpInfo?, isDownloading: Boolean) {
     val colors = MaterialTheme.colorScheme
-    val problem = info != null && (!info.platformSupported || info.executable == null)
+    val problem = info != null &&
+        (!info.platformSupported || info.error != null || info.executable == null)
     val text = when {
-        info == null -> "Comprobando yt-dlp en el sistema…"
+        info == null -> "Comprobando yt-dlp…"
         !info.platformSupported -> YT_DLP_UNSUPPORTED_MESSAGE
-        info.executable == null -> "yt-dlp no encontrado. Instálalo o define la variable YT_DLP_PATH."
+        info.error != null -> info.error
+        info.executable == null -> "yt-dlp no está disponible."
         else -> {
             val version = info.version?.let { " $it" }.orEmpty()
             val ffmpeg = if (info.ffmpegAvailable) "ffmpeg detectado" else "ffmpeg no instalado"

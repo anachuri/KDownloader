@@ -17,10 +17,9 @@ dependencies {
 
     implementation(libs.compose.uiToolingPreview)
     debugImplementation(libs.compose.uiTooling)
-    val youtubedlAndroid = "0.18.1"
-    implementation("io.github.junkfood02.youtubedl-android:library:$youtubedlAndroid")
-    implementation("io.github.junkfood02.youtubedl-android:ffmpeg:$youtubedlAndroid")
-    implementation("io.github.junkfood02.youtubedl-android:aria2c:$youtubedlAndroid") // opcional
+    implementation(libs.youtubedl.android.library)
+    implementation(libs.youtubedl.android.ffmpeg)
+    implementation(libs.youtubedl.android.aria2c)
 }
 
 android {
@@ -37,6 +36,13 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+        jniLibs {
+            // youtubedl-android reads libpython.zip.so from nativeLibraryDir and runs
+            // libpython.so/libffmpeg.so from the same place, so the shared objects must be
+            // extracted from the APK at install time. Without this, init() fails with
+            // FileNotFoundException.
+            useLegacyPackaging = true
         }
     }
     buildTypes {

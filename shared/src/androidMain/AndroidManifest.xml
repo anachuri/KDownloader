@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <!-- Captures the application context for the shared yt-dlp/file-reveal implementations. -->
+        <provider
+            android:name="com.app.kdownloader.platform.YtDlpInitializer"
+            android:authorities="${applicationId}.kdownloader.initializer"
+            android:exported="false" />
+    </application>
+
+</manifest>

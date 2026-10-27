@@ -26,6 +26,12 @@ actual suspend fun probeYtDlp(): YtDlpInfo = withContext(Dispatchers.IO) {
         executable = executable,
         version = executable?.let(::readVersion),
         ffmpegAvailable = hasFfmpeg(),
+        error = if (executable == null) {
+            "No se encontró yt-dlp. Instálalo o define la variable YT_DLP_PATH " +
+                "con la ruta al ejecutable."
+        } else {
+            null
+        },
     )
 }
 
@@ -130,9 +136,9 @@ actual fun ytDlpDownload(request: DownloadRequest): Flow<DownloadEvent> = channe
 
         finishedPath != null && !fileExists ->
             "yt-dlp terminó con código $exitCode pero no se encontró el archivo final.\n" +
-                failureMessage(errors, exitCode)
+                describeYtDlpFailure(errors, null)
 
-        else -> failureMessage(errors, exitCode)
+        else -> describeYtDlpFailure(errors, exitCodeFallback(exitCode))
     }
 
     send(
@@ -148,86 +154,19 @@ actual fun ytDlpDownload(request: DownloadRequest): Flow<DownloadEvent> = channe
 // Command building (internal so the JVM test source set can cover it without touching the system)
 // ---------------------------------------------------------------------------------------------
 
-internal const val PROGRESS_PREFIX = "KDLPROGRESS|"
-internal const val FILE_PREFIX = "KDLFILE|"
-
-private const val PROGRESS_TEMPLATE =
-    "download:$PROGRESS_PREFIX%(progress.downloaded_bytes)s|%(progress.total_bytes)s|" +
-        "%(progress.total_bytes_estimate)s|%(progress._percent_str)s|%(progress._speed_str)s|" +
-        "%(progress._eta_str)s"
-
 internal fun buildYtDlpArgs(
     executable: String,
     request: DownloadRequest,
     ffmpegAvailable: Boolean,
 ): List<String> = buildList {
     add(executable)
-    add("--newline") // one line per progress tick instead of carriage-return updates
-    add("--no-playlist")
-    add("--no-warnings")
-    add("--encoding")
-    add("utf-8")
-    // --print implies --quiet; --no-quiet keeps the progress stream flowing.
-    add("--print")
-    add("after_move:$FILE_PREFIX%(filepath)s")
-    add("--no-quiet")
-    add("--no-simulate")
-    add("--progress-template")
-    add(PROGRESS_TEMPLATE)
-    add("--paths")
-    add(File(request.outputDirectory).absolutePath)
-    add("-o")
-    add("%(title).120B [%(id)s].%(ext)s")
-
-    val audioFormat = request.audioFormat
-    if (audioFormat != null) {
-        if (ffmpegAvailable) {
-            add("--extract-audio")
-            add("--audio-format")
-            add(audioFormat)
-            request.audioBitrateKbps?.let { add("--audio-quality"); add("${it}K") }
-        } else {
-            // Extraction/conversion needs ffmpeg; keep the original container instead of failing.
-            add("--format")
-            add("bestaudio/best")
-        }
-    } else {
-        val height = request.maxHeight
-        val selector = when {
-            height == null && ffmpegAvailable -> "bv*+ba/b"
-            height == null -> "b"
-            ffmpegAvailable -> "bv*[height<=$height]+ba/b[height<=$height]/b"
-            else -> "b[height<=$height]/b"
-        }
-        add("--format")
-        add(selector)
-    }
-
+    // Desktop keeps resolving relative folders against its own working directory.
+    val absoluteOutput = request.copy(
+        outputDirectory = File(request.outputDirectory).absolutePath,
+    )
+    addAll(buildYtDlpOptions(absoluteOutput, ffmpegAvailable))
     add(request.url)
 }
-
-internal fun parseProgressLine(line: String): DownloadEvent.Progress? {
-    if (!line.startsWith(PROGRESS_PREFIX)) return null
-    val parts = line.removePrefix(PROGRESS_PREFIX).split('|')
-    if (parts.size < 6) return null
-
-    val downloaded = parts[0].trim().toLongOrNull()
-    val total = parts[1].trim().toLongOrNull() ?: parts[2].trim().toLongOrNull()
-    val usableTotal = total?.takeIf { it > 0 }
-    val percent = parts[3].trim().removeSuffix("%").trim().toFloatOrNull()
-        ?: downloaded?.let { bytes -> usableTotal?.let { bytes * 100f / it } }
-
-    return DownloadEvent.Progress(
-        fraction = percent?.let { (it / 100f).coerceIn(0f, 1f) },
-        downloadedBytes = downloaded,
-        totalBytes = usableTotal,
-        speed = parts[4].trim().takeUnless { it.isUnavailable() },
-        eta = parts[5].trim().takeUnless { it.isUnavailable() },
-    )
-}
-
-private fun String.isUnavailable(): Boolean =
-    isBlank() || this == "NA" || startsWith("Unknown", ignoreCase = true)
 
 // ---------------------------------------------------------------------------------------------
 // Host tooling
@@ -293,20 +232,5 @@ private fun stopProcess(process: Process) {
     if (!process.waitFor(2, TimeUnit.SECONDS)) process.destroyForcibly()
 }
 
-private fun failureMessage(errors: List<String>, exitCode: Int): String {
-    val raw = errors.lastOrNull() ?: return "yt-dlp terminó con el código $exitCode."
-    return when {
-        raw.contains("ffmpeg", ignoreCase = true) || raw.contains("ffprobe", ignoreCase = true) ->
-            "Falta ffmpeg, necesario para unir imagen y sonido o convertir el audio. " +
-                "Instálalo y vuelve a intentarlo.\n$raw"
-
-        raw.contains("Requested format is not available", ignoreCase = true) ->
-            "Este video solo ofrece pistas de audio y video separadas. " +
-                "Instala ffmpeg para poder unirlas.\n$raw"
-
-        raw.contains("Unsupported URL", ignoreCase = true) ->
-            "yt-dlp no reconoce ese enlace como un medio descargable.\n$raw"
-
-        else -> raw
-    }
-}
+private fun exitCodeFallback(exitCode: Int): String? =
+    if (exitCode != 0) "yt-dlp terminó con el código $exitCode." else null
