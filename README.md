@@ -1,4 +1,4 @@
-# KDownloader <img width="20" height="20" alt="icon" src="https://github.com/user-attachments/assets/c268091a-597f-4d69-9dd5-2ba6efca7c31" />
+# KDownloader <img width="40" height="40" alt="icon" src="https://github.com/user-attachments/assets/c268091a-597f-4d69-9dd5-2ba6efca7c31" />
 
 
 **KDownloader** es una aplicación multiplataforma moderna para la previsualización y descarga de videos y audios, desarrollada con **Kotlin Multiplatform (KMP)** y **Compose Multiplatform**, impulsada por el motor **yt-dlp**.

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -84,6 +85,8 @@ import com.app.kdownloader.platform.probeYtDlp
 import com.app.kdownloader.platform.revealInFolder
 import com.app.kdownloader.platform.supportsYtDlpDownloads
 import com.app.kdownloader.platform.ytDlpDownload
+import kdownloader.shared.generated.resources.Res
+import kdownloader.shared.generated.resources.icon
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -91,6 +94,7 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import org.jetbrains.compose.resources.decodeToImageBitmap
+import org.jetbrains.compose.resources.painterResource
 import kotlin.math.roundToInt
 
 private const val YOUTUBE_SAMPLE = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
@@ -131,6 +135,7 @@ fun KDownloaderScreen() {
     var downloadDirectory by remember { mutableStateOf("") }
     var downloadState by remember { mutableStateOf<DownloadUiState?>(null) }
     var downloadJob by remember { mutableStateOf<Job?>(null) }
+    val contentScrollState = rememberScrollState()
 
     LaunchedEffect(Unit) {
         ytDlpInfo = runCatching { probeYtDlp() }.getOrNull()
@@ -225,6 +230,7 @@ fun KDownloaderScreen() {
     ) {
         Scaffold(
             containerColor = Color.Transparent,
+            contentColor = MaterialTheme.colorScheme.onBackground,
             topBar = {
                 TopAppBar(
                     title = {
@@ -248,179 +254,194 @@ fun KDownloaderScreen() {
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = Color.Transparent,
                         scrolledContainerColor = Color.Transparent,
+                        titleContentColor = MaterialTheme.colorScheme.onBackground,
+                        navigationIconContentColor = MaterialTheme.colorScheme.onBackground,
+                        actionIconContentColor = MaterialTheme.colorScheme.onBackground,
                     ),
                 )
             },
             snackbarHost = { SnackbarHost(snackbarHostState) },
         ) { innerPadding ->
-            Column(
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(innerPadding)
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 20.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
+                    .padding(innerPadding),
             ) {
                 Column(
                     modifier = Modifier
-                        .widthIn(max = 1040.dp)
-                        .fillMaxWidth()
-                        .padding(top = 8.dp),
+                        .fillMaxSize()
+                        .verticalScroll(contentScrollState)
+                        .padding(horizontal = 20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Hero()
-                    Spacer(Modifier.height(22.dp))
-
-                    SearchCard(
-                        url = url,
-                        isLoading = isLoading,
-                        hasResult = analysis != null,
-                        error = error,
-                        onUrlChange = {
-                            url = it
-                            if (error != null) error = null
-                        },
-                        onClear = {
-                            url = ""
-                            analysis = null
-                            error = null
-                        },
-                        onAnalyze = { analyze(url) },
-                        onExample = { example ->
-                            url = example
-                            analyze(example)
-                        },
-                    )
-
-                    if (analysis == null && !isLoading && error == null) {
-                        Spacer(Modifier.height(18.dp))
-                        Row(
-                            modifier = Modifier.horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            HintPill("Hasta 4K")
-                            HintPill("MP3, M4A y Opus")
-                            HintPill("Vista previa del video")
-                        }
-                    }
-
-                    if (isLoading) {
-                        Spacer(Modifier.height(18.dp))
-                        LoadingCard()
-                    }
-
-                    analysis?.let { result ->
-                        Spacer(Modifier.height(24.dp))
-                        ResultHeader(result)
-                        Spacer(Modifier.height(26.dp))
-
-                        Text(
-                            "Elige qué descargar",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            "Calidades estimadas de la demo: la descarga sí usa yt-dlp con el enlace real.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Spacer(Modifier.height(14.dp))
-
-                        DownloadOptionsCard(
-                            result = result,
-                            type = selectedType,
-                            onTypeChange = { selectedType = it },
-                            selectedVideo = selectedVideo,
-                            selectedAudio = selectedAudio,
-                            onSelectVideo = { selectedVideo = it },
-                            onSelectAudio = { selectedAudio = it },
-                        )
-
+                    Column(
+                        modifier = Modifier
+                            .widthIn(max = 1040.dp)
+                            .fillMaxWidth()
+                            .padding(top = 8.dp),
+                    ) {
+                        Hero()
                         Spacer(Modifier.height(22.dp))
-                        DownloadActions(
-                            result = result,
-                            type = selectedType,
-                            selectedVideo = selectedVideo,
-                            selectedAudio = selectedAudio,
-                            directory = downloadDirectory,
-                            onDirectoryChange = { downloadDirectory = it },
-                            info = ytDlpInfo,
-                            isDownloading = downloadState?.inProgress == true,
-                            onDownload = {
-                                when (selectedType) {
-                                    DownloadType.Video -> {
-                                        val video = result.videoOptions
-                                            .getOrNull(selectedVideo)
-                                            ?: result.videoOptions.first()
-                                        startDownload(
-                                            request = DownloadRequest(
-                                                url = result.url,
-                                                outputDirectory = downloadDirectory,
-                                                maxHeight = video.maxHeightOrNull(),
-                                            ),
-                                            label = "Video ${video.label}",
-                                        )
-                                    }
 
-                                    DownloadType.Audio -> {
-                                        val audio = result.audioOptions
-                                            .getOrNull(selectedAudio)
-                                            ?: result.audioOptions.first()
-                                        startDownload(
-                                            request = DownloadRequest(
-                                                url = result.url,
-                                                outputDirectory = downloadDirectory,
-                                                audioFormat = audio.audioFormat(),
-                                                audioBitrateKbps = audio.bitrateKbpsOrNull(),
-                                            ),
-                                            label = "Audio ${audio.label}",
-                                        )
-                                    }
-                                }
+                        SearchCard(
+                            url = url,
+                            isLoading = isLoading,
+                            hasResult = analysis != null,
+                            error = error,
+                            onUrlChange = {
+                                url = it
+                                if (error != null) error = null
+                            },
+                            onClear = {
+                                url = ""
+                                analysis = null
+                                error = null
+                            },
+                            onAnalyze = { analyze(url) },
+                            onExample = { example ->
+                                url = example
+                                analyze(example)
                             },
                         )
 
-                        downloadState?.let { state ->
-                            Spacer(Modifier.height(16.dp))
-                            DownloadProgressCard(
-                                state = state,
-                                onCancel = {
-                                    downloadJob?.cancel()
-                                    downloadJob = null
-                                    downloadState = downloadState?.copy(
-                                        inProgress = false,
-                                        success = false,
-                                        detail = "Descarga cancelada por el usuario.",
-                                    )
-                                },
-                                onDismiss = { downloadState = null },
-                                onReveal = { path ->
-                                    scope.launch {
-                                        val opened = runCatching { revealInFolder(path) }
-                                            .getOrDefault(false)
-                                        snackbarHostState.showSnackbar(
-                                            if (opened) {
-                                                "Abriendo la carpeta…"
-                                            } else {
-                                                "No se pudo abrir la carpeta del archivo."
-                                            },
-                                        )
+                        if (analysis == null && !isLoading && error == null) {
+                            Spacer(Modifier.height(18.dp))
+                            Row(
+                                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                HintPill("Hasta 4K")
+                                HintPill("MP3, M4A y Opus")
+                                HintPill("Vista previa del video")
+                            }
+                        }
+
+                        if (isLoading) {
+                            Spacer(Modifier.height(18.dp))
+                            LoadingCard()
+                        }
+
+                        analysis?.let { result ->
+                            Spacer(Modifier.height(24.dp))
+                            ResultHeader(result)
+                            Spacer(Modifier.height(26.dp))
+
+                            Text(
+                                "Elige qué descargar",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "Calidades estimadas de la demo: la descarga sí usa yt-dlp con el enlace real.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(Modifier.height(14.dp))
+
+                            DownloadOptionsCard(
+                                result = result,
+                                type = selectedType,
+                                onTypeChange = { selectedType = it },
+                                selectedVideo = selectedVideo,
+                                selectedAudio = selectedAudio,
+                                onSelectVideo = { selectedVideo = it },
+                                onSelectAudio = { selectedAudio = it },
+                            )
+
+                            Spacer(Modifier.height(22.dp))
+                            DownloadActions(
+                                result = result,
+                                type = selectedType,
+                                selectedVideo = selectedVideo,
+                                selectedAudio = selectedAudio,
+                                directory = downloadDirectory,
+                                onDirectoryChange = { downloadDirectory = it },
+                                info = ytDlpInfo,
+                                isDownloading = downloadState?.inProgress == true,
+                                onDownload = {
+                                    when (selectedType) {
+                                        DownloadType.Video -> {
+                                            val video = result.videoOptions
+                                                .getOrNull(selectedVideo)
+                                                ?: result.videoOptions.first()
+                                            startDownload(
+                                                request = DownloadRequest(
+                                                    url = result.url,
+                                                    outputDirectory = downloadDirectory,
+                                                    maxHeight = video.maxHeightOrNull(),
+                                                ),
+                                                label = "Video ${video.label}",
+                                            )
+                                        }
+
+                                        DownloadType.Audio -> {
+                                            val audio = result.audioOptions
+                                                .getOrNull(selectedAudio)
+                                                ?: result.audioOptions.first()
+                                            startDownload(
+                                                request = DownloadRequest(
+                                                    url = result.url,
+                                                    outputDirectory = downloadDirectory,
+                                                    audioFormat = audio.audioFormat(),
+                                                    audioBitrateKbps = audio.bitrateKbpsOrNull(),
+                                                ),
+                                                label = "Audio ${audio.label}",
+                                            )
+                                        }
                                     }
                                 },
                             )
-                        }
-                    }
 
-                    Spacer(Modifier.height(28.dp))
-                    Text(
-                        "KDownloader · Interfaz multiplataforma",
-                        modifier = Modifier.fillMaxWidth(),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                    )
-                    Spacer(Modifier.height(16.dp))
+                            downloadState?.let { state ->
+                                Spacer(Modifier.height(16.dp))
+                                DownloadProgressCard(
+                                    state = state,
+                                    onCancel = {
+                                        downloadJob?.cancel()
+                                        downloadJob = null
+                                        downloadState = downloadState?.copy(
+                                            inProgress = false,
+                                            success = false,
+                                            detail = "Descarga cancelada por el usuario.",
+                                        )
+                                    },
+                                    onDismiss = { downloadState = null },
+                                    onReveal = { path ->
+                                        scope.launch {
+                                            val opened = runCatching { revealInFolder(path) }
+                                                .getOrDefault(false)
+                                            snackbarHostState.showSnackbar(
+                                                if (opened) {
+                                                    "Abriendo la carpeta…"
+                                                } else {
+                                                    "No se pudo abrir la carpeta del archivo."
+                                                },
+                                            )
+                                        }
+                                    },
+                                )
+                            }
+                        }
+
+                        Spacer(Modifier.height(28.dp))
+                        Text(
+                            "KDownloader · Interfaz multiplataforma",
+                            modifier = Modifier.fillMaxWidth(),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                        )
+                        Spacer(Modifier.height(16.dp))
+                    }
                 }
+                VerticalScrollBar(
+                    scrollState = contentScrollState,
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .fillMaxHeight()
+                        .padding(vertical = 10.dp, horizontal = 2.dp),
+                )
             }
         }
     }
@@ -428,27 +449,14 @@ fun KDownloaderScreen() {
 
 @Composable
 private fun LogoMark() {
-    Box(
+    Image(
+        painter = painterResource(Res.drawable.icon),
+        contentDescription = null,
         modifier = Modifier
             .size(38.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(
-                Brush.linearGradient(
-                    listOf(
-                        MaterialTheme.colorScheme.primary,
-                        MaterialTheme.colorScheme.secondary,
-                    ),
-                ),
-            ),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            "↓",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-            color = Color.White,
-        )
-    }
+            .clip(RoundedCornerShape(10.dp)),
+        contentScale = ContentScale.Crop,
+    )
 }
 
 @Composable
@@ -627,6 +635,7 @@ private fun AnalyzeButton(
 private fun HintPill(text: String) {
     Surface(
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
         shape = RoundedCornerShape(50),
         border = BorderStroke(
             1.dp,
@@ -756,6 +765,7 @@ private fun ResultDetails(result: VideoAnalysis, modifier: Modifier = Modifier) 
         Spacer(Modifier.height(16.dp))
         Surface(
             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             shape = RoundedCornerShape(10.dp),
         ) {
             Text(
@@ -980,6 +990,7 @@ private fun DownloadTypeSelector(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(10.dp),
         color = colors.surfaceVariant.copy(alpha = 0.7f),
+        contentColor = colors.onSurfaceVariant,
     ) {
         Row(
             modifier = Modifier.padding(4.dp),
@@ -1101,6 +1112,7 @@ private fun QualityRow(
         } else {
             colors.surfaceVariant.copy(alpha = 0.55f)
         },
+        contentColor = if (selected) colors.onPrimaryContainer else colors.onSurface,
         border = BorderStroke(
             1.dp,
             if (selected) colors.primary else colors.outlineVariant,
@@ -1172,6 +1184,7 @@ private fun DownloadActions(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
         border = BorderStroke(
             1.dp,
             MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
