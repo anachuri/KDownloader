@@ -81,6 +81,7 @@ import com.app.kdownloader.platform.YT_DLP_UNSUPPORTED_MESSAGE
 import com.app.kdownloader.platform.YtDlpInfo
 import com.app.kdownloader.platform.defaultDownloadDirectory
 import com.app.kdownloader.platform.fetchImageBytes
+import com.app.kdownloader.platform.fetchVideoMetadata
 import com.app.kdownloader.platform.probeYtDlp
 import com.app.kdownloader.platform.revealInFolder
 import com.app.kdownloader.platform.supportsYtDlpDownloads
@@ -127,6 +128,7 @@ fun KDownloaderScreen() {
     var isLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var analysis by remember { mutableStateOf<VideoAnalysis?>(null) }
+    var resolvingMetadata by remember { mutableStateOf(false) }
     var selectedType by remember { mutableStateOf(DownloadType.Video) }
     var selectedVideo by remember { mutableStateOf(0) }
     var selectedAudio by remember { mutableStateOf(0) }
@@ -208,17 +210,34 @@ fun KDownloaderScreen() {
         error = null
         isLoading = true
         analysis = null
+        resolvingMetadata = false
         scope.launch {
             delay(850)
             val result = analyzeLink(trimmed)
             isLoading = false
             if (result == null) {
                 error = "No pudimos reconocer ese enlace. Revisa que sea una URL válida."
-            } else {
-                analysis = result
-                selectedType = DownloadType.Video
-                selectedVideo = result.videoOptions.indexOfFirst { it.recommended }.coerceAtLeast(0)
-                selectedAudio = 0
+                return@launch
+            }
+
+            analysis = result
+            selectedType = DownloadType.Video
+            selectedVideo = result.videoOptions.indexOfFirst { it.recommended }.coerceAtLeast(0)
+            selectedAudio = 0
+
+            // Desktop and Android can ask yt-dlp for the real title/duration. The demo values are
+            // shown immediately, so a slow or failed lookup never blocks the screen.
+            resolvingMetadata = true
+            val metadata = try {
+                fetchVideoMetadata(result.url)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Exception) {
+                null
+            }
+            if (analysis?.url == result.url) {
+                if (metadata != null) analysis = analyzeLink(result.url, metadata)
+                resolvingMetadata = false
             }
         }
     }
@@ -244,7 +263,7 @@ fun KDownloaderScreen() {
                                     fontWeight = FontWeight.Bold,
                                 )
                                 Text(
-                                    "Descarga en la mejor calidad",
+                                    "Descarga en la mejor calidad y libre de anuncios",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -296,6 +315,7 @@ fun KDownloaderScreen() {
                                 url = ""
                                 analysis = null
                                 error = null
+                                resolvingMetadata = false
                             },
                             onAnalyze = { analyze(url) },
                             onExample = { example ->
@@ -323,7 +343,7 @@ fun KDownloaderScreen() {
 
                         analysis?.let { result ->
                             Spacer(Modifier.height(24.dp))
-                            ResultHeader(result)
+                            ResultHeader(result, metadataLoading = resolvingMetadata)
                             Spacer(Modifier.height(26.dp))
 
                             Text(
@@ -426,7 +446,7 @@ fun KDownloaderScreen() {
 
                         Spacer(Modifier.height(28.dp))
                         Text(
-                            "KDownloader · Interfaz multiplataforma",
+                            "KDownloader - Libre de anuncios",
                             modifier = Modifier.fillMaxWidth(),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -693,7 +713,7 @@ private fun LoadingCard() {
 }
 
 @Composable
-private fun ResultHeader(result: VideoAnalysis) {
+private fun ResultHeader(result: VideoAnalysis, metadataLoading: Boolean) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -713,7 +733,11 @@ private fun ResultHeader(result: VideoAnalysis) {
                         modifier = Modifier.width(360.dp),
                     )
                     Spacer(Modifier.width(20.dp))
-                    ResultDetails(result = result, modifier = Modifier.weight(1f))
+                    ResultDetails(
+                        result = result,
+                        metadataLoading = metadataLoading,
+                        modifier = Modifier.weight(1f),
+                    )
                 }
             } else {
                 Column {
@@ -723,7 +747,7 @@ private fun ResultHeader(result: VideoAnalysis) {
                         modifier = Modifier.fillMaxWidth(),
                     )
                     Spacer(Modifier.height(16.dp))
-                    ResultDetails(result = result)
+                    ResultDetails(result = result, metadataLoading = metadataLoading)
                 }
             }
         }
@@ -731,7 +755,11 @@ private fun ResultHeader(result: VideoAnalysis) {
 }
 
 @Composable
-private fun ResultDetails(result: VideoAnalysis, modifier: Modifier = Modifier) {
+private fun ResultDetails(
+    result: VideoAnalysis,
+    metadataLoading: Boolean,
+    modifier: Modifier = Modifier,
+) {
     Column(modifier) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Pill(
@@ -739,11 +767,7 @@ private fun ResultDetails(result: VideoAnalysis, modifier: Modifier = Modifier) 
                 container = MaterialTheme.colorScheme.primaryContainer,
                 content = MaterialTheme.colorScheme.onPrimaryContainer,
             )
-            Pill(
-                text = "Datos de ejemplo",
-                container = MaterialTheme.colorScheme.secondaryContainer,
-                content = MaterialTheme.colorScheme.onSecondaryContainer,
-            )
+
         }
         Spacer(Modifier.height(10.dp))
         Text(
@@ -757,6 +781,14 @@ private fun ResultDetails(result: VideoAnalysis, modifier: Modifier = Modifier) 
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        if (metadataLoading) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Buscando el título real…",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         Spacer(Modifier.height(16.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
             Metric(value = "${result.videoOptions.size}", label = "resoluciones")

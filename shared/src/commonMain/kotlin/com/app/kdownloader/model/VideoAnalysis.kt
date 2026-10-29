@@ -1,5 +1,6 @@
 package com.app.kdownloader.model
 
+import com.app.kdownloader.platform.VideoMetadata
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
 
@@ -66,12 +67,15 @@ private val audioSpecs = listOf(
 )
 
 /**
- * Builds the demo analysis shown after the user submits a link.
+ * Builds the analysis shown after the user submits a link.
  *
- * There is no backend yet, so metadata and sizes are deterministic mock values derived from the
- * URL. The only real network request is the video thumbnail (YouTube/Vimeo/direct image URLs).
+ * There is no backend yet, so titles, durations and sizes come from deterministic mock values
+ * derived from the URL. Passing [metadata] (resolved by yt-dlp on desktop/Android) replaces the
+ * title, duration and thumbnail with the real ones and recomputes the estimated sizes from the
+ * real duration. The only direct network request made here is the thumbnail placeholder
+ * (YouTube/Vimeo/direct image URLs).
  */
-fun analyzeLink(rawUrl: String): VideoAnalysis? {
+fun analyzeLink(rawUrl: String, metadata: VideoMetadata? = null): VideoAnalysis? {
     val url = rawUrl.trim()
     if (!url.startsWith("http://", ignoreCase = true) && !url.startsWith("https://", ignoreCase = true)) {
         return null
@@ -86,16 +90,20 @@ fun analyzeLink(rawUrl: String): VideoAnalysis? {
     if (host.isBlank() || !host.contains('.')) return null
 
     val platform = platformName(host, url)
-    val seconds = 180 + (url.hashCode().absoluteValue % 660)
+    val seconds: Int = metadata?.durationSeconds?.takeIf { it > 0 }?.toInt()
+        ?: (180 + (url.hashCode().absoluteValue % 660))
     val duration = formatDuration(seconds)
+    val title = metadata?.title?.takeIf { it.isNotBlank() } ?: titleFor(platform, host)
+    val thumbnailUrl = metadata?.thumbnailUrl?.takeIf { it.isNotBlank() }
+        ?: thumbnailFor(url, platform)
 
     return VideoAnalysis(
         url = url,
         platform = platform,
         host = host,
-        title = titleFor(platform, host),
+        title = title,
         duration = duration,
-        thumbnailUrl = thumbnailFor(url, platform),
+        thumbnailUrl = thumbnailUrl,
         videoOptions = videoSpecs.map { spec ->
             VideoQuality(
                 label = spec.label,
@@ -128,8 +136,8 @@ private fun platformName(host: String, url: String): String = when {
 }
 
 private fun titleFor(platform: String, host: String): String = when (platform) {
-    "YouTube" -> "Video de YouTube"
-    "Vimeo" -> "Video de Vimeo"
+    "YouTube" -> "Cargando titulo..."
+    "Vimeo" -> "Cargando titulo..."
     "Imagen" -> "Imagen de $host"
     else -> "Contenido de $platform"
 }

@@ -35,6 +35,30 @@ actual suspend fun probeYtDlp(): YtDlpInfo = withContext(Dispatchers.IO) {
     )
 }
 
+private const val METADATA_TIMEOUT_SECONDS = 20L
+
+actual suspend fun fetchVideoMetadata(url: String): VideoMetadata? = withContext(Dispatchers.IO) {
+    val executable = resolveYtDlp() ?: return@withContext null
+    val command = listOf(executable) + metadataOptions() + url
+    val process = runCatching {
+        ProcessBuilder(command).redirectErrorStream(true).start()
+    }.getOrNull() ?: return@withContext null
+
+    try {
+        process.outputStream.close() // yt-dlp never reads stdin
+        // Metadata output is a single line, so waiting for the exit before draining the pipe keeps
+        // this bounded: a hung extractor is killed instead of blocking the UI coroutine forever.
+        if (!process.waitFor(METADATA_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+            stopProcess(process)
+            return@withContext null
+        }
+        val output = process.inputStream.bufferedReader().use { it.readText() }
+        output.lineSequence().firstNotNullOfOrNull(::parseMetadataLine)
+    } finally {
+        if (process.isAlive) stopProcess(process)
+    }
+}
+
 actual fun ytDlpDownload(request: DownloadRequest): Flow<DownloadEvent> = channelFlow {
     val executable = resolveYtDlp()
     if (executable == null) {

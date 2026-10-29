@@ -2,6 +2,13 @@ package com.app.kdownloader.platform
 
 internal const val PROGRESS_PREFIX = "KDLPROGRESS|"
 internal const val FILE_PREFIX = "KDLFILE|"
+internal const val METADATA_PREFIX = "KDLMETA|"
+
+/** `%`-template fields are separated with the ASCII unit separator, which titles never contain. */
+private const val METADATA_SEPARATOR = "\u001F"
+
+private const val METADATA_TEMPLATE =
+    "$METADATA_PREFIX%(title)s$METADATA_SEPARATOR%(duration)s$METADATA_SEPARATOR%(thumbnail)s"
 
 private const val PROGRESS_TEMPLATE =
     "download:$PROGRESS_PREFIX%(progress.downloaded_bytes)s|%(progress.total_bytes)s|" +
@@ -57,6 +64,44 @@ internal fun buildYtDlpOptions(
         }
         add("--format")
         add(selector)
+    }
+}
+
+/**
+ * Arguments for a metadata-only run.
+ *
+ * `--print` implies `--simulate`, so nothing is downloaded; the single printed line is parsed by
+ * [parseMetadataLine]. Both desktop and Android share these options so they resolve the same
+ * fields.
+ */
+internal fun metadataOptions(): List<String> = listOf(
+    "--skip-download",
+    "--no-playlist",
+    "--no-warnings",
+    "--encoding",
+    "utf-8",
+    "--print",
+    METADATA_TEMPLATE,
+)
+
+/** Parses the `KDLMETA|…` line printed by [metadataOptions]. */
+internal fun parseMetadataLine(line: String): VideoMetadata? {
+    if (!line.startsWith(METADATA_PREFIX)) return null
+    val parts = line.removePrefix(METADATA_PREFIX).split(METADATA_SEPARATOR)
+
+    fun String.value(): String? = trim().takeUnless { it.isEmpty() || it == "NA" }
+
+    val title = parts.getOrNull(0)?.value()
+    val duration = parts.getOrNull(1)?.value()
+        ?.toDoubleOrNull()
+        ?.toLong()
+        ?.takeIf { it > 0 }
+    val thumbnail = parts.getOrNull(2)?.value()
+
+    return if (title == null && duration == null && thumbnail == null) {
+        null
+    } else {
+        VideoMetadata(title = title, durationSeconds = duration, thumbnailUrl = thumbnail)
     }
 }
 

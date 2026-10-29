@@ -93,6 +93,36 @@ class YtDlpJvmTest {
     }
 
     @Test
+    fun parsesMetadataLine() {
+        val metadata = assertNotNull(
+            parseMetadataLine(
+                "${METADATA_PREFIX}Never Gonna Give You Up\u001F213.4\u001Fhttps://i.ytimg.com/vi/abc/hq.jpg",
+            ),
+        )
+
+        assertEquals("Never Gonna Give You Up", metadata.title)
+        assertEquals(213L, metadata.durationSeconds)
+        assertEquals("https://i.ytimg.com/vi/abc/hq.jpg", metadata.thumbnailUrl)
+    }
+
+    @Test
+    fun toleratesMissingMetadataFields() {
+        val metadata = assertNotNull(
+            parseMetadataLine("${METADATA_PREFIX}Only a title\u001FNA\u001FNA"),
+        )
+
+        assertEquals("Only a title", metadata.title)
+        assertNull(metadata.durationSeconds)
+        assertNull(metadata.thumbnailUrl)
+    }
+
+    @Test
+    fun rejectsMetadataWithoutUsefulValues() {
+        assertNull(parseMetadataLine("${METADATA_PREFIX}NA\u001FNA\u001FNA"))
+        assertNull(parseMetadataLine("not metadata"))
+    }
+
+    @Test
     fun explainsForbiddenDownloads() {
         val message = describeYtDlpFailure(
             listOf("ERROR: unable to download video data: HTTP Error 403: Forbidden"),

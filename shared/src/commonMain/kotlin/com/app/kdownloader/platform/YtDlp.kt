@@ -39,6 +39,18 @@ data class YtDlpInfo(
     val available: Boolean get() = executable != null && error == null
 }
 
+/**
+ * Real metadata resolved by yt-dlp without downloading the media.
+ *
+ * Every field is optional: extractors differ in what they expose, and a missing field must keep
+ * the fallback value shown by the demo analysis.
+ */
+data class VideoMetadata(
+    val title: String? = null,
+    val durationSeconds: Long? = null,
+    val thumbnailUrl: String? = null,
+)
+
 /** Events streamed while a yt-dlp process runs. */
 sealed interface DownloadEvent {
     /** A progress tick. [fraction] is `0f..1f`, or `null` when the total size is unknown. */
@@ -69,6 +81,15 @@ expect suspend fun probeYtDlp(): YtDlpInfo
 
 /** Folder suggested by the host OS (created on demand when downloading). */
 expect fun defaultDownloadDirectory(): String
+
+/**
+ * Resolves the title, duration and thumbnail without downloading anything.
+ *
+ * Returns `null` when the platform cannot run yt-dlp or the extraction fails; callers keep the
+ * demo values in that case. Desktop and Android always return `null` on failure instead of
+ * throwing, so the UI can resolve metadata optimistically.
+ */
+expect suspend fun fetchVideoMetadata(url: String): VideoMetadata?
 
 /**
  * Runs yt-dlp and streams its progress.

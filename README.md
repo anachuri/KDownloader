@@ -45,7 +45,7 @@ Para realizar descargas reales en PC o Mac, se recomienda tener instalados en el
 
 Puedes ejecutar las distintas versiones del proyecto mediante los siguientes comandos Gradle:
 
-### 🖥 Escritorio (Desktop)
+### Escritorio (Desktop)
 ```bash
 # Modo estándar
 ./gradlew :desktopApp:run

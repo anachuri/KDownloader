@@ -10,5 +10,7 @@ actual suspend fun probeYtDlp(): YtDlpInfo = YtDlpInfo(platformSupported = false
 
 actual fun defaultDownloadDirectory(): String = ""
 
+actual suspend fun fetchVideoMetadata(url: String): VideoMetadata? = null
+
 actual fun ytDlpDownload(request: DownloadRequest): Flow<DownloadEvent> =
     flowOf(DownloadEvent.Finished(success = false, message = YT_DLP_UNSUPPORTED_MESSAGE))

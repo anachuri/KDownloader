@@ -15,6 +15,7 @@ import com.yausername.youtubedl_android.YoutubeDLResponse
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.launch
@@ -29,6 +30,7 @@ actual val supportsYtDlpDownloads: Boolean = true
 
 private const val TAG = "KDownloader"
 private const val DOWNLOAD_SUBFOLDER = "KDownloader"
+private const val METADATA_TIMEOUT_MS = 30_000L
 
 /** Public location the user sees; scoped storage forbids yt-dlp from writing here directly. */
 private val publishedDirectory: String
@@ -73,6 +75,41 @@ actual suspend fun probeYtDlp(): YtDlpInfo = withContext(Dispatchers.IO) {
             ffmpegAvailable = ffmpegReady,
             fixedDownloadDirectory = publishedDirectory,
         )
+    }
+}
+
+actual suspend fun fetchVideoMetadata(url: String): VideoMetadata? = coroutineScope {
+    val context = AndroidAppContext.current ?: return@coroutineScope null
+    // Reuses the same lazy bootstrap as downloads (and its 24 h update check).
+    if (ensureTools(context) != null) return@coroutineScope null
+
+    val processId = "kdownloader-meta-${UUID.randomUUID()}"
+    // Cancelling (timeout or an abandoned analysis) must stop the native process, not just the
+    // coroutine, exactly like the download flow does.
+    val cancellationWatcher = launch(Dispatchers.IO) {
+        try {
+            awaitCancellation()
+        } finally {
+            YoutubeDL.getInstance().destroyProcessById(processId)
+        }
+    }
+
+    try {
+        withTimeoutOrNull(METADATA_TIMEOUT_MS) {
+            withContext(Dispatchers.IO) {
+                val request = YoutubeDLRequest(url).addCommands(metadataOptions())
+                val response = YoutubeDL.getInstance()
+                    .execute(request, processId, redirectErrorStream = true)
+                response.out.lineSequence().firstNotNullOfOrNull(::parseMetadataLine)
+            }
+        }
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (error: Exception) {
+        Log.d(TAG, "No se pudo leer los metadatos del enlace", error)
+        null
+    } finally {
+        cancellationWatcher.cancel()
     }
 }
 
