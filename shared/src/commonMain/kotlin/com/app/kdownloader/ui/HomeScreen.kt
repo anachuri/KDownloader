@@ -29,9 +29,9 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LocalContentColor
@@ -62,7 +62,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -97,6 +96,12 @@ import kotlin.math.roundToInt
 private const val YOUTUBE_SAMPLE = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 private const val VIMEO_SAMPLE = "https://vimeo.com/76979871"
 
+/** What the user is currently choosing to download. Only one can be active at a time. */
+private enum class DownloadType(val label: String, val glyph: String) {
+    Video("Video", "▶"),
+    Audio("Audio", "♪"),
+}
+
 /** UI state for the running/recent yt-dlp download. */
 private data class DownloadUiState(
     val label: String,
@@ -118,6 +123,7 @@ fun KDownloaderScreen() {
     var isLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var analysis by remember { mutableStateOf<VideoAnalysis?>(null) }
+    var selectedType by remember { mutableStateOf(DownloadType.Video) }
     var selectedVideo by remember { mutableStateOf(0) }
     var selectedAudio by remember { mutableStateOf(0) }
 
@@ -205,27 +211,17 @@ fun KDownloaderScreen() {
                 error = "No pudimos reconocer ese enlace. Revisa que sea una URL válida."
             } else {
                 analysis = result
+                selectedType = DownloadType.Video
                 selectedVideo = result.videoOptions.indexOfFirst { it.recommended }.coerceAtLeast(0)
                 selectedAudio = 0
             }
         }
     }
 
-    val background = MaterialTheme.colorScheme.background
-    val primary = MaterialTheme.colorScheme.primary
-
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        lerp(background, primary, 0.14f),
-                        lerp(background, primary, 0.03f),
-                        background,
-                    ),
-                ),
-            ),
+            .background(MaterialTheme.colorScheme.background),
     ) {
         Scaffold(
             containerColor = Color.Transparent,
@@ -330,67 +326,57 @@ fun KDownloaderScreen() {
                         )
                         Spacer(Modifier.height(14.dp))
 
-                        BoxWithConstraints {
-                            if (maxWidth >= 820.dp) {
-                                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                    VideoOptionsCard(
-                                        result = result,
-                                        selected = selectedVideo,
-                                        onSelect = { selectedVideo = it },
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                    AudioOptionsCard(
-                                        result = result,
-                                        selected = selectedAudio,
-                                        onSelect = { selectedAudio = it },
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                }
-                            } else {
-                                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                                    VideoOptionsCard(
-                                        result = result,
-                                        selected = selectedVideo,
-                                        onSelect = { selectedVideo = it },
-                                    )
-                                    AudioOptionsCard(
-                                        result = result,
-                                        selected = selectedAudio,
-                                        onSelect = { selectedAudio = it },
-                                    )
-                                }
-                            }
-                        }
+                        DownloadOptionsCard(
+                            result = result,
+                            type = selectedType,
+                            onTypeChange = { selectedType = it },
+                            selectedVideo = selectedVideo,
+                            selectedAudio = selectedAudio,
+                            onSelectVideo = { selectedVideo = it },
+                            onSelectAudio = { selectedAudio = it },
+                        )
 
                         Spacer(Modifier.height(22.dp))
                         DownloadActions(
                             result = result,
+                            type = selectedType,
                             selectedVideo = selectedVideo,
                             selectedAudio = selectedAudio,
                             directory = downloadDirectory,
                             onDirectoryChange = { downloadDirectory = it },
                             info = ytDlpInfo,
                             isDownloading = downloadState?.inProgress == true,
-                            onDownloadVideo = { video ->
-                                startDownload(
-                                    request = DownloadRequest(
-                                        url = result.url,
-                                        outputDirectory = downloadDirectory,
-                                        maxHeight = video.maxHeightOrNull(),
-                                    ),
-                                    label = "Video ${video.label}",
-                                )
-                            },
-                            onDownloadAudio = { audio ->
-                                startDownload(
-                                    request = DownloadRequest(
-                                        url = result.url,
-                                        outputDirectory = downloadDirectory,
-                                        audioFormat = audio.audioFormat(),
-                                        audioBitrateKbps = audio.bitrateKbpsOrNull(),
-                                    ),
-                                    label = "Audio ${audio.label}",
-                                )
+                            onDownload = {
+                                when (selectedType) {
+                                    DownloadType.Video -> {
+                                        val video = result.videoOptions
+                                            .getOrNull(selectedVideo)
+                                            ?: result.videoOptions.first()
+                                        startDownload(
+                                            request = DownloadRequest(
+                                                url = result.url,
+                                                outputDirectory = downloadDirectory,
+                                                maxHeight = video.maxHeightOrNull(),
+                                            ),
+                                            label = "Video ${video.label}",
+                                        )
+                                    }
+
+                                    DownloadType.Audio -> {
+                                        val audio = result.audioOptions
+                                            .getOrNull(selectedAudio)
+                                            ?: result.audioOptions.first()
+                                        startDownload(
+                                            request = DownloadRequest(
+                                                url = result.url,
+                                                outputDirectory = downloadDirectory,
+                                                audioFormat = audio.audioFormat(),
+                                                audioBitrateKbps = audio.bitrateKbpsOrNull(),
+                                            ),
+                                            label = "Audio ${audio.label}",
+                                        )
+                                    }
+                                }
                             },
                         )
 
@@ -445,7 +431,7 @@ private fun LogoMark() {
     Box(
         modifier = Modifier
             .size(38.dp)
-            .clip(RoundedCornerShape(11.dp))
+            .clip(RoundedCornerShape(10.dp))
             .background(
                 Brush.linearGradient(
                     listOf(
@@ -493,12 +479,12 @@ private fun SearchCard(
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
+        shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surface,
-        shadowElevation = 8.dp,
+        shadowElevation = 1.dp,
         border = BorderStroke(
             1.dp,
-            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.8f),
+            MaterialTheme.colorScheme.outlineVariant,
         ),
     ) {
         Column(modifier = Modifier.padding(18.dp)) {
@@ -587,7 +573,7 @@ private fun LinkField(
         onValueChange = onUrlChange,
         modifier = modifier,
         singleLine = true,
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(10.dp),
         placeholder = { Text("https://www.youtube.com/watch?v=…") },
         trailingIcon = if (url.isNotEmpty()) {
             {
@@ -616,7 +602,8 @@ private fun AnalyzeButton(
     Button(
         onClick = onClick,
         enabled = !isLoading,
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(10.dp),
+        elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
         modifier = modifier.height(56.dp),
     ) {
         if (isLoading) {
@@ -643,7 +630,7 @@ private fun HintPill(text: String) {
         shape = RoundedCornerShape(50),
         border = BorderStroke(
             1.dp,
-            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.9f),
+            MaterialTheme.colorScheme.outlineVariant,
         ),
     ) {
         Text(
@@ -659,11 +646,11 @@ private fun HintPill(text: String) {
 private fun LoadingCard() {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(
             1.dp,
-            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.8f),
+            MaterialTheme.colorScheme.outlineVariant,
         ),
     ) {
         Column(modifier = Modifier.padding(18.dp)) {
@@ -700,12 +687,12 @@ private fun LoadingCard() {
 private fun ResultHeader(result: VideoAnalysis) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
+        shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surface,
-        shadowElevation = 8.dp,
+        shadowElevation = 1.dp,
         border = BorderStroke(
             1.dp,
-            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.8f),
+            MaterialTheme.colorScheme.outlineVariant,
         ),
     ) {
         BoxWithConstraints(modifier = Modifier.padding(18.dp)) {
@@ -769,7 +756,7 @@ private fun ResultDetails(result: VideoAnalysis, modifier: Modifier = Modifier) 
         Spacer(Modifier.height(16.dp))
         Surface(
             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-            shape = RoundedCornerShape(12.dp),
+            shape = RoundedCornerShape(10.dp),
         ) {
             Text(
                 result.url,
@@ -838,7 +825,7 @@ private fun VideoThumbnail(
     Box(
         modifier = modifier
             .aspectRatio(16f / 9f)
-            .clip(RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(16.dp))
             .background(
                 Brush.linearGradient(
                     listOf(
@@ -925,57 +912,113 @@ private fun PlayIcon(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun VideoOptionsCard(
+private fun DownloadOptionsCard(
     result: VideoAnalysis,
-    selected: Int,
-    onSelect: (Int) -> Unit,
+    type: DownloadType,
+    onTypeChange: (DownloadType) -> Unit,
+    selectedVideo: Int,
+    selectedAudio: Int,
+    onSelectVideo: (Int) -> Unit,
+    onSelectAudio: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val isVideo = type == DownloadType.Video
+    val optionCount = if (isVideo) result.videoOptions.size else result.audioOptions.size
+
     OptionCard(
-        title = "Video",
-        subtitle = "${result.videoOptions.size} resoluciones disponibles",
-        glyph = "▶",
-        accent = MaterialTheme.colorScheme.primary,
+        title = type.label,
+        subtitle = if (isVideo) {
+            "$optionCount resoluciones disponibles"
+        } else {
+            "$optionCount formatos disponibles"
+        },
+        glyph = type.glyph,
+        accent = if (isVideo) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            MaterialTheme.colorScheme.secondary
+        },
         modifier = modifier,
     ) {
-        result.videoOptions.forEachIndexed { index, option ->
-            QualityRow(
-                selected = selected == index,
-                onClick = { onSelect(index) },
-                title = option.label,
-                badge = option.quality,
-                subtitle = option.format,
-                trailing = option.size,
-                recommended = option.recommended,
-            )
-            if (index != result.videoOptions.lastIndex) Spacer(Modifier.height(8.dp))
+        DownloadTypeSelector(type = type, onTypeChange = onTypeChange)
+        Spacer(Modifier.height(14.dp))
+        if (isVideo) {
+            result.videoOptions.forEachIndexed { index, option ->
+                QualityRow(
+                    selected = selectedVideo == index,
+                    onClick = { onSelectVideo(index) },
+                    title = option.label,
+                    badge = option.quality,
+                    subtitle = option.format,
+                    trailing = option.size,
+                    recommended = option.recommended,
+                )
+                if (index != result.videoOptions.lastIndex) Spacer(Modifier.height(8.dp))
+            }
+        } else {
+            result.audioOptions.forEachIndexed { index, option ->
+                QualityRow(
+                    selected = selectedAudio == index,
+                    onClick = { onSelectAudio(index) },
+                    title = option.label,
+                    subtitle = option.detail,
+                    trailing = option.size,
+                )
+                if (index != result.audioOptions.lastIndex) Spacer(Modifier.height(8.dp))
+            }
         }
     }
 }
 
 @Composable
-private fun AudioOptionsCard(
-    result: VideoAnalysis,
-    selected: Int,
-    onSelect: (Int) -> Unit,
-    modifier: Modifier = Modifier,
+private fun DownloadTypeSelector(
+    type: DownloadType,
+    onTypeChange: (DownloadType) -> Unit,
 ) {
-    OptionCard(
-        title = "Audio",
-        subtitle = "${result.audioOptions.size} formatos disponibles",
-        glyph = "♪",
-        accent = MaterialTheme.colorScheme.secondary,
-        modifier = modifier,
+    val colors = MaterialTheme.colorScheme
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(10.dp),
+        color = colors.surfaceVariant.copy(alpha = 0.7f),
     ) {
-        result.audioOptions.forEachIndexed { index, option ->
-            QualityRow(
-                selected = selected == index,
-                onClick = { onSelect(index) },
-                title = option.label,
-                subtitle = option.detail,
-                trailing = option.size,
-            )
-            if (index != result.audioOptions.lastIndex) Spacer(Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            DownloadType.entries.forEach { option ->
+                val selected = option == type
+                val shape = RoundedCornerShape(8.dp)
+                Surface(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(shape)
+                        .clickable { onTypeChange(option) },
+                    shape = shape,
+                    color = if (selected) colors.surface else Color.Transparent,
+                    shadowElevation = if (selected) 1.dp else 0.dp,
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 9.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            option.glyph,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (selected) colors.primary else colors.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            option.label,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = if (selected) colors.onSurface else colors.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -991,12 +1034,12 @@ private fun OptionCard(
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
+        shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surface,
-        shadowElevation = 4.dp,
+        shadowElevation = 1.dp,
         border = BorderStroke(
             1.dp,
-            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.8f),
+            MaterialTheme.colorScheme.outlineVariant,
         ),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -1045,7 +1088,7 @@ private fun QualityRow(
     recommended: Boolean = false,
 ) {
     val colors = MaterialTheme.colorScheme
-    val shape = RoundedCornerShape(14.dp)
+    val shape = RoundedCornerShape(10.dp)
 
     Surface(
         modifier = Modifier
@@ -1054,13 +1097,13 @@ private fun QualityRow(
             .clickable(onClick = onClick),
         shape = shape,
         color = if (selected) {
-            colors.primaryContainer.copy(alpha = 0.55f)
+            colors.primaryContainer
         } else {
-            colors.surfaceVariant.copy(alpha = 0.35f)
+            colors.surfaceVariant.copy(alpha = 0.55f)
         },
         border = BorderStroke(
             1.dp,
-            if (selected) colors.primary else colors.outlineVariant.copy(alpha = 0.7f),
+            if (selected) colors.primary else colors.outlineVariant,
         ),
     ) {
         Row(
@@ -1112,97 +1155,66 @@ private fun QualityRow(
 @Composable
 private fun DownloadActions(
     result: VideoAnalysis,
+    type: DownloadType,
     selectedVideo: Int,
     selectedAudio: Int,
     directory: String,
     onDirectoryChange: (String) -> Unit,
     info: YtDlpInfo?,
     isDownloading: Boolean,
-    onDownloadVideo: (VideoQuality) -> Unit,
-    onDownloadAudio: (AudioQuality) -> Unit,
+    onDownload: () -> Unit,
 ) {
     val video = result.videoOptions.getOrNull(selectedVideo) ?: result.videoOptions.first()
     val audio = result.audioOptions.getOrNull(selectedAudio) ?: result.audioOptions.first()
-    val buttonLabel = if (isDownloading) "Descargando…" else null
+    val buttonLabel = if (isDownloading) "Descargando…" else "Descargar ${type.label.lowercase()}"
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
         border = BorderStroke(
             1.dp,
-            MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
         ),
     ) {
-        BoxWithConstraints(modifier = Modifier.padding(18.dp)) {
-            val wide = maxWidth >= 620.dp
-            Column {
-                DownloadSummary(video = video, audio = audio)
-                Spacer(Modifier.height(12.dp))
-                val fixedDirectory = info?.fixedDownloadDirectory
-                if (fixedDirectory != null) {
-                    Text(
-                        text = "Los archivos se guardan en $fixedDirectory",
-                        modifier = Modifier.fillMaxWidth(),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                } else {
-                    OutlinedTextField(
-                        value = directory,
-                        onValueChange = onDirectoryChange,
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        enabled = !isDownloading,
-                        shape = RoundedCornerShape(14.dp),
-                        label = { Text("Carpeta de destino") },
-                    )
-                }
-                Spacer(Modifier.height(12.dp))
-
-                if (wide) {
-                    Row {
-                        Button(
-                            onClick = { onDownloadVideo(video) },
-                            enabled = !isDownloading,
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(14.dp),
-                        ) {
-                            Text(buttonLabel ?: "Descargar video", fontWeight = FontWeight.SemiBold)
-                        }
-                        Spacer(Modifier.width(10.dp))
-                        FilledTonalButton(
-                            onClick = { onDownloadAudio(audio) },
-                            enabled = !isDownloading,
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(14.dp),
-                        ) {
-                            Text(buttonLabel ?: "Descargar audio", fontWeight = FontWeight.SemiBold)
-                        }
-                    }
-                } else {
-                    Button(
-                        onClick = { onDownloadVideo(video) },
-                        enabled = !isDownloading,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(14.dp),
-                    ) {
-                        Text(buttonLabel ?: "Descargar video", fontWeight = FontWeight.SemiBold)
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    FilledTonalButton(
-                        onClick = { onDownloadAudio(audio) },
-                        enabled = !isDownloading,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(14.dp),
-                    ) {
-                        Text(buttonLabel ?: "Descargar audio", fontWeight = FontWeight.SemiBold)
-                    }
-                }
-
-                Spacer(Modifier.height(10.dp))
-                DownloadToolStatus(info = info, isDownloading = isDownloading)
+        Column(modifier = Modifier.padding(18.dp)) {
+            DownloadSummary(type = type, video = video, audio = audio)
+            Spacer(Modifier.height(12.dp))
+            val fixedDirectory = info?.fixedDownloadDirectory
+            if (fixedDirectory != null) {
+                Text(
+                    text = "Los archivos se guardan en $fixedDirectory",
+                    modifier = Modifier.fillMaxWidth(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                OutlinedTextField(
+                    value = directory,
+                    onValueChange = onDirectoryChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    enabled = !isDownloading,
+                    shape = RoundedCornerShape(10.dp),
+                    label = { Text("Carpeta de destino") },
+                )
             }
+            Spacer(Modifier.height(12.dp))
+
+            Button(
+                onClick = onDownload,
+                enabled = !isDownloading,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp),
+                shape = RoundedCornerShape(10.dp),
+                elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
+            ) {
+                Text(buttonLabel, fontWeight = FontWeight.SemiBold)
+            }
+
+            Spacer(Modifier.height(10.dp))
+            DownloadToolStatus(info = info, isDownloading = isDownloading)
         }
     }
 }
@@ -1265,9 +1277,9 @@ private fun DownloadProgressCard(
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
+        shape = RoundedCornerShape(16.dp),
         color = colors.surface,
-        shadowElevation = 4.dp,
+        shadowElevation = 1.dp,
         border = BorderStroke(1.dp, accent.copy(alpha = 0.45f)),
     ) {
         Column(modifier = Modifier.padding(18.dp)) {
@@ -1333,7 +1345,7 @@ private fun DownloadProgressCard(
                 Spacer(Modifier.height(12.dp))
                 Surface(
                     color = colors.surfaceVariant.copy(alpha = 0.5f),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(10.dp),
                 ) {
                     Text(
                         path,
@@ -1348,7 +1360,7 @@ private fun DownloadProgressCard(
                     Spacer(Modifier.height(10.dp))
                     OutlinedButton(
                         onClick = { onReveal(path) },
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(10.dp),
                     ) {
                         Text("Mostrar en carpeta", fontWeight = FontWeight.SemiBold)
                     }
@@ -1359,7 +1371,7 @@ private fun DownloadProgressCard(
                 Spacer(Modifier.height(12.dp))
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(10.dp),
                     color = colors.surfaceVariant.copy(alpha = 0.35f),
                 ) {
                     Box(
@@ -1386,6 +1398,7 @@ private fun DownloadProgressCard(
 
 @Composable
 private fun DownloadSummary(
+    type: DownloadType,
     video: VideoQuality,
     audio: AudioQuality,
     modifier: Modifier = Modifier,
@@ -1398,7 +1411,10 @@ private fun DownloadSummary(
         )
         Spacer(Modifier.height(2.dp))
         Text(
-            "Video ${video.label} · ${video.size}   ·   Audio ${audio.label} · ${audio.size}",
+            when (type) {
+                DownloadType.Video -> "Video ${video.label} · ${video.size}"
+                DownloadType.Audio -> "Audio ${audio.label} · ${audio.size}"
+            },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
