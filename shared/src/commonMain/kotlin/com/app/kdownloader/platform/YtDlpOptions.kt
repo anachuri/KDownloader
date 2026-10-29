@@ -1,14 +1,29 @@
 package com.app.kdownloader.platform
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlin.math.roundToInt
+
 internal const val PROGRESS_PREFIX = "KDLPROGRESS|"
 internal const val FILE_PREFIX = "KDLFILE|"
 internal const val METADATA_PREFIX = "KDLMETA|"
+internal const val FORMATS_PREFIX = "KDLFORMATS|"
 
 /** `%`-template fields are separated with the ASCII unit separator, which titles never contain. */
 private const val METADATA_SEPARATOR = "\u001F"
 
 private const val METADATA_TEMPLATE =
     "$METADATA_PREFIX%(title)s$METADATA_SEPARATOR%(duration)s$METADATA_SEPARATOR%(thumbnail)s"
+
+/**
+ * `formats` is a JSON array, kept on a separate line so a title containing the separator cannot
+ * corrupt it. It comes from the same extraction as the metadata (no extra network round trip).
+ */
+private const val FORMATS_TEMPLATE = "$FORMATS_PREFIX%(formats)j"
 
 private const val PROGRESS_TEMPLATE =
     "download:$PROGRESS_PREFIX%(progress.downloaded_bytes)s|%(progress.total_bytes)s|" +
@@ -70,9 +85,9 @@ internal fun buildYtDlpOptions(
 /**
  * Arguments for a metadata-only run.
  *
- * `--print` implies `--simulate`, so nothing is downloaded; the single printed line is parsed by
- * [parseMetadataLine]. Both desktop and Android share these options so they resolve the same
- * fields.
+ * `--print` implies `--simulate`, so nothing is downloaded. Two lines are printed: the compact
+ * metadata line parsed by [parseMetadataLine] and the formats JSON parsed by [parseFormatsLine].
+ * Both desktop and Android share these options so they resolve the same fields.
  */
 internal fun metadataOptions(): List<String> = listOf(
     "--skip-download",
@@ -82,6 +97,8 @@ internal fun metadataOptions(): List<String> = listOf(
     "utf-8",
     "--print",
     METADATA_TEMPLATE,
+    "--print",
+    FORMATS_TEMPLATE,
 )
 
 /** Parses the `KDLMETA|…` line printed by [metadataOptions]. */
@@ -104,6 +121,67 @@ internal fun parseMetadataLine(line: String): VideoMetadata? {
         VideoMetadata(title = title, durationSeconds = duration, thumbnailUrl = thumbnail)
     }
 }
+
+/**
+ * Parses the `KDLFORMATS|…` line printed by [metadataOptions].
+ *
+ * Only the fields needed to describe the available resolutions are kept; malformed output (an
+ * old yt-dlp release without `%(formats)j`, for instance) yields an empty list so the UI falls
+ * back to the static demo list.
+ */
+internal fun parseFormatsLine(line: String): List<VideoFormatInfo> {
+    if (!line.startsWith(FORMATS_PREFIX)) return emptyList()
+    val payload = line.removePrefix(FORMATS_PREFIX)
+    return runCatching {
+        Json.parseToJsonElement(payload).jsonArray.mapNotNull { element ->
+            val obj = element as? JsonObject ?: return@mapNotNull null
+            val videoCodec = obj.stringField("vcodec")?.takeUnless { it == "none" }
+            val audioCodec = obj.stringField("acodec")?.takeUnless { it == "none" }
+            // Storyboards and image formats have neither codec.
+            if (videoCodec == null && audioCodec == null) return@mapNotNull null
+
+            VideoFormatInfo(
+                height = obj.doubleField("height")?.toInt()?.takeIf { it > 0 },
+                fps = obj.doubleField("fps")?.toInt()?.takeIf { it > 0 },
+                extension = obj.stringField("ext"),
+                videoCodec = videoCodec,
+                audioCodec = audioCodec,
+                totalBitrateKbps = obj.doubleField("tbr")?.roundToInt()?.takeIf { it > 0 },
+                fileSizeBytes = (obj.doubleField("filesize") ?: obj.doubleField("filesize_approx"))
+                    ?.toLong()
+                    ?.takeIf { it > 0 },
+            )
+        }
+    }.getOrDefault(emptyList())
+}
+
+/**
+ * Combines every line printed by [metadataOptions] into a single [VideoMetadata].
+ *
+ * Returns `null` when yt-dlp printed nothing usable (extraction failed, unsupported site, ...).
+ */
+internal fun parseMetadataOutput(output: String): VideoMetadata? {
+    var metadata: VideoMetadata? = null
+    var formats: List<VideoFormatInfo> = emptyList()
+
+    output.lineSequence().forEach { line ->
+        parseMetadataLine(line)?.let { metadata = it }
+        if (line.startsWith(FORMATS_PREFIX)) formats = parseFormatsLine(line)
+    }
+
+    val parsed = metadata
+    val hasMetadata = parsed?.let {
+        it.title != null || it.durationSeconds != null || it.thumbnailUrl != null
+    } == true
+    if (!hasMetadata && formats.isEmpty()) return null
+    return (parsed ?: VideoMetadata()).copy(formats = formats)
+}
+
+private fun JsonObject.stringField(name: String): String? =
+    (this[name] as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
+
+private fun JsonObject.doubleField(name: String): Double? =
+    (this[name] as? JsonPrimitive)?.doubleOrNull
 
 /** Parses a `KDLPROGRESS|…` line emitted by the `--progress-template` above. */
 internal fun parseProgressLine(line: String): DownloadEvent.Progress? {

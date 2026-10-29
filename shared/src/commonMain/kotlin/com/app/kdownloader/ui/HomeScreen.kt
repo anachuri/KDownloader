@@ -128,7 +128,7 @@ fun KDownloaderScreen() {
     var isLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var analysis by remember { mutableStateOf<VideoAnalysis?>(null) }
-    var resolvingMetadata by remember { mutableStateOf(false) }
+    var loadingFormats by remember { mutableStateOf(false) }
     var selectedType by remember { mutableStateOf(DownloadType.Video) }
     var selectedVideo by remember { mutableStateOf(0) }
     var selectedAudio by remember { mutableStateOf(0) }
@@ -210,7 +210,7 @@ fun KDownloaderScreen() {
         error = null
         isLoading = true
         analysis = null
-        resolvingMetadata = false
+        loadingFormats = false
         scope.launch {
             delay(850)
             val result = analyzeLink(trimmed)
@@ -225,9 +225,10 @@ fun KDownloaderScreen() {
             selectedVideo = result.videoOptions.indexOfFirst { it.recommended }.coerceAtLeast(0)
             selectedAudio = 0
 
-            // Desktop and Android can ask yt-dlp for the real title/duration. The demo values are
-            // shown immediately, so a slow or failed lookup never blocks the screen.
-            resolvingMetadata = true
+            // Desktop and Android can ask yt-dlp for the real title, duration and streams. The
+            // placeholder values are shown immediately, but the options stay hidden behind a
+            // loader until the real resolutions are known.
+            loadingFormats = true
             val metadata = try {
                 fetchVideoMetadata(result.url)
             } catch (cancellation: CancellationException) {
@@ -236,8 +237,15 @@ fun KDownloaderScreen() {
                 null
             }
             if (analysis?.url == result.url) {
-                if (metadata != null) analysis = analyzeLink(result.url, metadata)
-                resolvingMetadata = false
+                if (metadata != null) {
+                    val updated = analyzeLink(result.url, metadata)
+                    if (updated != null) {
+                        analysis = updated
+                        selectedVideo =
+                            updated.videoOptions.indexOfFirst { it.recommended }.coerceAtLeast(0)
+                    }
+                }
+                loadingFormats = false
             }
         }
     }
@@ -315,7 +323,7 @@ fun KDownloaderScreen() {
                                 url = ""
                                 analysis = null
                                 error = null
-                                resolvingMetadata = false
+                                loadingFormats = false
                             },
                             onAnalyze = { analyze(url) },
                             onExample = { example ->
@@ -343,7 +351,7 @@ fun KDownloaderScreen() {
 
                         analysis?.let { result ->
                             Spacer(Modifier.height(24.dp))
-                            ResultHeader(result, metadataLoading = resolvingMetadata)
+                            ResultHeader(result)
                             Spacer(Modifier.height(26.dp))
 
                             Text(
@@ -353,65 +361,72 @@ fun KDownloaderScreen() {
                             )
                             Spacer(Modifier.height(4.dp))
                             Text(
-                                "Calidades estimadas de la demo: la descarga sí usa yt-dlp con el enlace real.",
+                                "Los tamaños son aproximados; la descarga usa yt-dlp con el enlace real.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                             Spacer(Modifier.height(14.dp))
 
-                            DownloadOptionsCard(
-                                result = result,
-                                type = selectedType,
-                                onTypeChange = { selectedType = it },
-                                selectedVideo = selectedVideo,
-                                selectedAudio = selectedAudio,
-                                onSelectVideo = { selectedVideo = it },
-                                onSelectAudio = { selectedAudio = it },
-                            )
+                            if (loadingFormats) {
+                                LoadingCard(
+                                    title = "Obteniendo resoluciones…",
+                                    subtitle = "Leyendo los formatos disponibles del enlace.",
+                                )
+                            } else {
+                                DownloadOptionsCard(
+                                    result = result,
+                                    type = selectedType,
+                                    onTypeChange = { selectedType = it },
+                                    selectedVideo = selectedVideo,
+                                    selectedAudio = selectedAudio,
+                                    onSelectVideo = { selectedVideo = it },
+                                    onSelectAudio = { selectedAudio = it },
+                                )
 
-                            Spacer(Modifier.height(22.dp))
-                            DownloadActions(
-                                result = result,
-                                type = selectedType,
-                                selectedVideo = selectedVideo,
-                                selectedAudio = selectedAudio,
-                                directory = downloadDirectory,
-                                onDirectoryChange = { downloadDirectory = it },
-                                info = ytDlpInfo,
-                                isDownloading = downloadState?.inProgress == true,
-                                onDownload = {
-                                    when (selectedType) {
-                                        DownloadType.Video -> {
-                                            val video = result.videoOptions
-                                                .getOrNull(selectedVideo)
-                                                ?: result.videoOptions.first()
-                                            startDownload(
-                                                request = DownloadRequest(
-                                                    url = result.url,
-                                                    outputDirectory = downloadDirectory,
-                                                    maxHeight = video.maxHeightOrNull(),
-                                                ),
-                                                label = "Video ${video.label}",
-                                            )
-                                        }
+                                Spacer(Modifier.height(22.dp))
+                                DownloadActions(
+                                    result = result,
+                                    type = selectedType,
+                                    selectedVideo = selectedVideo,
+                                    selectedAudio = selectedAudio,
+                                    directory = downloadDirectory,
+                                    onDirectoryChange = { downloadDirectory = it },
+                                    info = ytDlpInfo,
+                                    isDownloading = downloadState?.inProgress == true,
+                                    onDownload = {
+                                        when (selectedType) {
+                                            DownloadType.Video -> {
+                                                val video = result.videoOptions
+                                                    .getOrNull(selectedVideo)
+                                                    ?: result.videoOptions.first()
+                                                startDownload(
+                                                    request = DownloadRequest(
+                                                        url = result.url,
+                                                        outputDirectory = downloadDirectory,
+                                                        maxHeight = video.maxHeightOrNull(),
+                                                    ),
+                                                    label = "Video ${video.label}",
+                                                )
+                                            }
 
-                                        DownloadType.Audio -> {
-                                            val audio = result.audioOptions
-                                                .getOrNull(selectedAudio)
-                                                ?: result.audioOptions.first()
-                                            startDownload(
-                                                request = DownloadRequest(
-                                                    url = result.url,
-                                                    outputDirectory = downloadDirectory,
-                                                    audioFormat = audio.audioFormat(),
-                                                    audioBitrateKbps = audio.bitrateKbpsOrNull(),
-                                                ),
-                                                label = "Audio ${audio.label}",
-                                            )
+                                            DownloadType.Audio -> {
+                                                val audio = result.audioOptions
+                                                    .getOrNull(selectedAudio)
+                                                    ?: result.audioOptions.first()
+                                                startDownload(
+                                                    request = DownloadRequest(
+                                                        url = result.url,
+                                                        outputDirectory = downloadDirectory,
+                                                        audioFormat = audio.audioFormat(),
+                                                        audioBitrateKbps = audio.bitrateKbpsOrNull(),
+                                                    ),
+                                                    label = "Audio ${audio.label}",
+                                                )
+                                            }
                                         }
-                                    }
-                                },
-                            )
+                                    },
+                                )
+                            }
 
                             downloadState?.let { state ->
                                 Spacer(Modifier.height(16.dp))
@@ -672,7 +687,10 @@ private fun HintPill(text: String) {
 }
 
 @Composable
-private fun LoadingCard() {
+private fun LoadingCard(
+    title: String = "Analizando enlace…",
+    subtitle: String = "Buscando resoluciones de video y formatos de audio.",
+) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -691,12 +709,12 @@ private fun LoadingCard() {
                 Spacer(Modifier.width(12.dp))
                 Column {
                     Text(
-                        "Analizando enlace…",
+                        title,
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
-                        "Buscando resoluciones de video y formatos de audio.",
+                        subtitle,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -713,7 +731,7 @@ private fun LoadingCard() {
 }
 
 @Composable
-private fun ResultHeader(result: VideoAnalysis, metadataLoading: Boolean) {
+private fun ResultHeader(result: VideoAnalysis) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -733,11 +751,7 @@ private fun ResultHeader(result: VideoAnalysis, metadataLoading: Boolean) {
                         modifier = Modifier.width(360.dp),
                     )
                     Spacer(Modifier.width(20.dp))
-                    ResultDetails(
-                        result = result,
-                        metadataLoading = metadataLoading,
-                        modifier = Modifier.weight(1f),
-                    )
+                    ResultDetails(result = result, modifier = Modifier.weight(1f))
                 }
             } else {
                 Column {
@@ -747,7 +761,7 @@ private fun ResultHeader(result: VideoAnalysis, metadataLoading: Boolean) {
                         modifier = Modifier.fillMaxWidth(),
                     )
                     Spacer(Modifier.height(16.dp))
-                    ResultDetails(result = result, metadataLoading = metadataLoading)
+                    ResultDetails(result = result)
                 }
             }
         }
@@ -755,11 +769,7 @@ private fun ResultHeader(result: VideoAnalysis, metadataLoading: Boolean) {
 }
 
 @Composable
-private fun ResultDetails(
-    result: VideoAnalysis,
-    metadataLoading: Boolean,
-    modifier: Modifier = Modifier,
-) {
+private fun ResultDetails(result: VideoAnalysis, modifier: Modifier = Modifier) {
     Column(modifier) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Pill(
@@ -781,14 +791,6 @@ private fun ResultDetails(
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        if (metadataLoading) {
-            Spacer(Modifier.height(4.dp))
-            Text(
-                "Buscando el título real…",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
         Spacer(Modifier.height(16.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
             Metric(value = "${result.videoOptions.size}", label = "resoluciones")

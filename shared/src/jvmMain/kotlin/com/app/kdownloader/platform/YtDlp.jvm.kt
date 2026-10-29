@@ -44,16 +44,29 @@ actual suspend fun fetchVideoMetadata(url: String): VideoMetadata? = withContext
         ProcessBuilder(command).redirectErrorStream(true).start()
     }.getOrNull() ?: return@withContext null
 
+    // The formats JSON can exceed the OS pipe buffer (~64 KiB on Linux/macOS), so stdout must be
+    // drained while the process runs; waiting first would deadlock until the timeout kills it.
+    val output = StringBuilder()
+    val reader = Thread {
+        runCatching {
+            process.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
+                output.append(reader.readText())
+            }
+        }
+    }.apply {
+        isDaemon = true
+        name = "kdownloader-ytdlp-metadata"
+        start()
+    }
+
     try {
         process.outputStream.close() // yt-dlp never reads stdin
-        // Metadata output is a single line, so waiting for the exit before draining the pipe keeps
-        // this bounded: a hung extractor is killed instead of blocking the UI coroutine forever.
         if (!process.waitFor(METADATA_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
             stopProcess(process)
             return@withContext null
         }
-        val output = process.inputStream.bufferedReader().use { it.readText() }
-        output.lineSequence().firstNotNullOfOrNull(::parseMetadataLine)
+        reader.join(2_000)
+        parseMetadataOutput(output.toString())
     } finally {
         if (process.isAlive) stopProcess(process)
     }

@@ -100,7 +100,7 @@ actual suspend fun fetchVideoMetadata(url: String): VideoMetadata? = coroutineSc
                 val request = YoutubeDLRequest(url).addCommands(metadataOptions())
                 val response = YoutubeDL.getInstance()
                     .execute(request, processId, redirectErrorStream = true)
-                response.out.lineSequence().firstNotNullOfOrNull(::parseMetadataLine)
+                parseMetadataOutput(response.out)
             }
         }
     } catch (cancellation: CancellationException) {

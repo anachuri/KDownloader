@@ -123,6 +123,58 @@ class YtDlpJvmTest {
     }
 
     @Test
+    fun parsesFormatsLine() {
+        val json = """
+            [
+              {"height":1080,"fps":30,"ext":"mp4","vcodec":"avc1.640028","acodec":"none",
+               "tbr":1041.4,"filesize":27712345,
+               "http_headers":{"User-Agent":"x"},"fragments":[{"url":"https://example.com"}]},
+              {"ext":"m4a","vcodec":"none","acodec":"mp4a.40.2","tbr":129.5,"filesize":3449447},
+              {"height":27,"ext":"mhtml","vcodec":"none","acodec":"none"}
+            ]
+        """.trimIndent().replace("\n", "")
+
+        val formats = parseFormatsLine("$FORMATS_PREFIX$json")
+
+        assertEquals(2, formats.size)
+        val video = formats.first()
+        assertEquals(1080, video.height)
+        assertEquals(30, video.fps)
+        assertEquals("mp4", video.extension)
+        assertEquals("avc1.640028", video.videoCodec)
+        assertNull(video.audioCodec)
+        assertEquals(1041, video.totalBitrateKbps)
+        assertEquals(27712345L, video.fileSizeBytes)
+
+        val audio = formats.last()
+        assertNull(audio.height)
+        assertNull(audio.videoCodec)
+        assertEquals("mp4a.40.2", audio.audioCodec)
+    }
+
+    @Test
+    fun parsesFullMetadataOutput() {
+        val output = listOf(
+            "$METADATA_PREFIX" + "Title\u001F213\u001Fhttps://img.example/thumb.jpg",
+            "$FORMATS_PREFIX" + """[{"height":720,"ext":"mp4","vcodec":"avc1","acodec":"none","tbr":600}]""",
+        ).joinToString("\n")
+
+        val metadata = assertNotNull(parseMetadataOutput(output))
+
+        assertEquals("Title", metadata.title)
+        assertEquals(213L, metadata.durationSeconds)
+        assertEquals(1, metadata.formats.size)
+        assertEquals(720, metadata.formats.single().height)
+    }
+
+    @Test
+    fun toleratesMalformedFormatsJson() {
+        assertTrue(parseFormatsLine("${FORMATS_PREFIX}not json").isEmpty())
+        assertTrue(parseFormatsLine("something else").isEmpty())
+        assertNull(parseMetadataOutput("no usable output"))
+    }
+
+    @Test
     fun explainsForbiddenDownloads() {
         val message = describeYtDlpFailure(
             listOf("ERROR: unable to download video data: HTTP Error 403: Forbidden"),

@@ -40,6 +40,26 @@ data class YtDlpInfo(
 }
 
 /**
+ * A media stream reported by yt-dlp for the analyzed link.
+ *
+ * Video streams carry [height] and [videoCodec]; audio-only streams carry [audioCodec] and leave
+ * [height] `null`. Values are only used to describe the options, never to build the yt-dlp
+ * download command (the app still downloads by [height] cap).
+ */
+data class VideoFormatInfo(
+    val height: Int? = null,
+    val fps: Int? = null,
+    val extension: String? = null,
+    val videoCodec: String? = null,
+    val audioCodec: String? = null,
+    val totalBitrateKbps: Int? = null,
+    val fileSizeBytes: Long? = null,
+) {
+    val isVideo: Boolean get() = height != null && videoCodec != null
+    val isAudioOnly: Boolean get() = height == null && audioCodec != null
+}
+
+/**
  * Real metadata resolved by yt-dlp without downloading the media.
  *
  * Every field is optional: extractors differ in what they expose, and a missing field must keep
@@ -49,6 +69,7 @@ data class VideoMetadata(
     val title: String? = null,
     val durationSeconds: Long? = null,
     val thumbnailUrl: String? = null,
+    val formats: List<VideoFormatInfo> = emptyList(),
 )
 
 /** Events streamed while a yt-dlp process runs. */
@@ -83,7 +104,7 @@ expect suspend fun probeYtDlp(): YtDlpInfo
 expect fun defaultDownloadDirectory(): String
 
 /**
- * Resolves the title, duration and thumbnail without downloading anything.
+ * Resolves the title, duration, thumbnail and available streams without downloading anything.
  *
  * Returns `null` when the platform cannot run yt-dlp or the extraction fails; callers keep the
  * demo values in that case. Desktop and Android always return `null` on failure instead of
