@@ -55,6 +55,13 @@ Tests (only `:shared` has tests: template placeholders per target plus `VideoAna
 - `kotlinx-browser` is declared on the `webMain` source set (shared by `js` + `wasmJs`) and `kotlinx-coroutines-core` on `commonMain`. `webMain` is created by the default KMP hierarchy; no manual `dependsOn` is needed.
 - `settings.gradle.kts` limits the `google()` repo to the `androidx`, `com.android`, and `com.google` groups. A Google-hosted artifact from another group needs that filter widened or it won't resolve.
 
+## Licencia
+
+- El proyecto es **GPL-3.0-or-later** (`LICENSE` en la raíz). No es una elección arbitraria: `:shared/androidMain` enlaza `youtubedl-android` (GPL-3.0, según su POM) y el FFmpeg que empaqueta es un build `--enable-gpl`, así que el APK distribuido no puede publicarse bajo MIT/Apache. El resto del stack (Compose/Kotlin/androidx/kotlinx) es Apache-2.0, compatible con GPLv3.
+- `THIRD-PARTY-NOTICES.md` documenta cada componente y su licencia; actualízalo al añadir dependencias nuevas con copyleft o al empaquetar binarios externos (hoy `yt-dlp` de escritorio se invoca como proceso, no se redistribuye).
+- Las releases adjuntan `LICENSE` y `THIRD-PARTY-NOTICES.md` al release (`release.yml`) y el `body` enlaza el tag como fuente. El tag `v*` cumple la obligación de ofrecer el fuente del binario.
+- Si algún día se quiere una licencia permisiva, primero hay que sacar `youtubedl-android` del APK (por ejemplo descargando del lado servidor); no basta con cambiar el `LICENSE`.
+
 ## Gotchas
 
 - `local.properties` is gitignored and holds `sdk.dir`; a fresh clone needs it before any Android task runs.

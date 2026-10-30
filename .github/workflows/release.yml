@@ -281,11 +281,17 @@ jobs:
       GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
       GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
     steps:
+      - uses: actions/checkout@v7
       - name: Descargar artefactos
         uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
+
+      - name: Adjuntar licencia y avisos de terceros
+        run: |
+          set -euo pipefail
+          cp LICENSE THIRD-PARTY-NOTICES.md dist/
 
       - name: Generar checksums SHA-256
         run: |
@@ -353,3 +359,9 @@ jobs:
             - **Escritorio**: requiere `yt-dlp` en el `PATH` para descargar de verdad. `ffmpeg` es opcional pero recomendado.
             - **macOS**: el DMG no está notarizado, así que Gatekeeper puede pedir confirmación (clic derecho > Abrir la primera vez).
             - **Windows**: el MSI no está firmado con Authenticode; SmartScreen puede mostrar una advertencia.
+
+            ### Licencia
+
+            KDownloader se distribuye bajo **GPL-3.0-or-later**. El texto completo va adjunto como `LICENSE` y el detalle de dependencias (incluido `youtubedl-android` / FFmpeg, que son GPLv3) en `THIRD-PARTY-NOTICES.md`.
+
+            El código fuente de este binario es el tag [`${{ needs.prepare.outputs.tag }}`](https://github.com/${{ github.repository }}/tree/${{ needs.prepare.outputs.tag }}).

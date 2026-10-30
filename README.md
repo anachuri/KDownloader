@@ -133,3 +133,21 @@ KDownloader/
 - **Concurrencia**: Kotlin Coroutines & Flows
 - **Descargas**: `yt-dlp` / `youtubedl-android`
 - **Gestión de dependencias**: Gradle Version Catalog (`gradle/libs.versions.toml`)
+
+---
+
+## Licencia
+
+Copyright (C) 2026 Maxi Anachuri.
+
+KDownloader se distribuye bajo la **GNU General Public License v3.0 o posterior** (`GPL-3.0-or-later`). El texto completo está en [LICENSE](LICENSE).
+
+La licencia es GPLv3 y no una licencia permisiva porque la app de Android enlaza `youtubedl-android`, que es GPL-3.0, y empaqueta un FFmpeg compilado con `--enable-gpl`. Una licencia permisiva como MIT no puede cubrir ese binario: sería una distribución de una obra derivada sin respetar la GPL. El detalle de cada dependencia y su licencia está en [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+
+Esto implica que:
+
+- Puedes usar, estudiar, modificar y redistribuir el proyecto, también comercialmente y también con cambios, siempre que el resultado se distribuya bajo GPLv3 y con el código fuente disponible.
+- Si publicas un binario modificado (por ejemplo un APK propio), debes ofrecer el código fuente correspondiente a esa versión.
+- Cada release publicada se construye desde un tag `v*` de este repositorio, que es el código fuente de ese binario.
+
+La GPL no cambia la titularidad del copyright ni concede derechos sobre el nombre o el icono del proyecto.

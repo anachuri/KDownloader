@@ -7,7 +7,7 @@ El workflow [`.github/workflows/release.yml`](workflows/release.yml) compila y p
 | `test` | `:shared:jvmTest` (bloquea el release si falla) |
 | `android` | APK universal firmado + certificado de firma |
 | `desktop` | `.deb` (Linux), `.msi` (Windows), `.dmg` (macOS) |
-| `release` | `SHA256SUMS`, firma GPG opcional, atestaciones de procedencia y el Release |
+| `release` | `SHA256SUMS`, firma GPG opcional, atestaciones de procedencia, `LICENSE` + `THIRD-PARTY-NOTICES.md` y el Release |
 
 Todos los artefactos se publican con nombres `KDownloader-<versión>-*`.
 
@@ -157,4 +157,5 @@ gh attestation verify KDownloader-1.2.3-android-universal.apk --repo anachuri/KD
 - Los instaladores de escritorio **no están firmados** con Authenticode (Windows) ni notarizados (macOS): SmartScreen y Gatekeeper pueden pedir confirmación manual.
 - Las atestaciones de procedencia (`actions/attest-build-provenance`) solo funcionan en repositorios públicos; en privados el paso se omite.
 - Los artefactos intermedios de Actions se conservan 7 días; los assets del Release son permanentes.
+- **Obligación GPL**: el proyecto es GPL-3.0-or-later porque el APK enlaza `youtubedl-android`. El release adjunta `LICENSE` y `THIRD-PARTY-NOTICES.md`, y su `body` enlaza el tag como fuente. No borres el tag de una release publicada mientras el binario siga descargable: es el código fuente que la GPL exige ofrecer.
 - Si el build de escritorio falla solo en Windows por WiX, el workflow intenta instalar `wixtoolset` con Chocolatey antes de empaquetar.
