@@ -1,0 +1,355 @@
+name: Release
+
+# Publica binarios firmados de Android y escritorio al crear un tag.
+#   git tag -a v1.2.3 -m "KDownloader 1.2.3"
+#   git push origin v1.2.3
+# También se puede lanzar a mano desde Actions > Release > Run workflow.
+# Documentación de secretos y verificación: .github/RELEASING.md
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Versión sin la 'v' (ej. 1.2.3). Vacío = usa el tag, o 0.0.0-dev.<run> en una rama."
+        required: false
+        type: string
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    name: Calcular versión
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+      package_version: ${{ steps.meta.outputs.package_version }}
+      version_code: ${{ steps.meta.outputs.version_code }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+    steps:
+      - name: Resolver versión, versionCode y tag
+        id: meta
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          set -euo pipefail
+
+          VERSION="${INPUT_VERSION:-}"
+          if [ -z "$VERSION" ] && [ "$REF_TYPE" = "tag" ]; then
+            VERSION="${REF_NAME#v}"
+          fi
+          VERSION="${VERSION#v}"
+          if [ -z "$VERSION" ]; then
+            VERSION="0.0.0-dev.${GITHUB_RUN_NUMBER}"
+          fi
+
+          # jpackage exige una versión puramente numérica: 1.2.3-beta.1 -> 1.2.3
+          CORE="${VERSION%%-*}"
+          IFS='.' read -r MAJOR MINOR PATCH _ <<< "$CORE"
+
+          MAJOR="${MAJOR//[^0-9]/}"; MAJOR="${MAJOR:-0}"; MAJOR=$((10#$MAJOR))
+          MINOR="${MINOR//[^0-9]/}"; MINOR="${MINOR:-0}"; MINOR=$((10#$MINOR))
+          PATCH="${PATCH//[^0-9]/}"; PATCH="${PATCH:-0}"; PATCH=$((10#$PATCH))
+
+          PACKAGE_VERSION="$MAJOR.$MINOR.$PATCH"
+          VERSION_CODE=$((MAJOR * 10000 + MINOR * 100 + PATCH))
+          if [ "$VERSION_CODE" -lt 1 ] || [ "$VERSION_CODE" -gt 2100000000 ]; then
+            echo "::error::versionCode fuera de rango ($VERSION_CODE). Usa versiones tipo 1.2.3."
+            exit 1
+          fi
+
+          PRERELEASE=false
+          case "$VERSION" in
+            *-*) PRERELEASE=true ;;
+          esac
+
+          {
+            echo "version=$VERSION"
+            echo "tag=v$VERSION"
+            echo "package_version=$PACKAGE_VERSION"
+            echo "version_code=$VERSION_CODE"
+            echo "prerelease=$PRERELEASE"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Versión: $VERSION | versionCode: $VERSION_CODE | jpackage: $PACKAGE_VERSION | prerelease: $PRERELEASE"
+
+  test:
+    name: Tests compartidos (JVM)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v4
+      - name: Instalar plataforma Android
+        run: sdkmanager --install "platforms;android-37" "platform-tools" || echo "::warning::No se pudo preinstalar android-37; AGP intentará descargarlo."
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          # El proveedor "enhanced" es un servicio comercial; el básico usa la caché estándar de GitHub y es gratis.
+          cache-provider: basic
+      - name: Ejecutar tests
+        run: ./gradlew --no-daemon :shared:jvmTest
+
+  android:
+    name: Android (APK firmado)
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      VERSION_CODE: ${{ needs.prepare.outputs.version_code }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v4
+      - name: Instalar plataforma Android
+        run: sdkmanager --install "platforms;android-37" "platform-tools" || echo "::warning::No se pudo preinstalar android-37; AGP intentará descargarlo."
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          # El proveedor "enhanced" es un servicio comercial; el básico usa la caché estándar de GitHub y es gratis.
+          cache-provider: basic
+      - name: Comprobar secretos de firma
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::Falta el secreto ANDROID_KEYSTORE_BASE64. Sin keystore no se puede publicar un APK firmado; revisa .github/RELEASING.md."
+            exit 1
+          fi
+      - name: Reconstruir keystore desde el secreto
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/kdownloader-release.jks"
+      - name: Compilar APK de release
+        env:
+          KDOWNLOADER_KEYSTORE_FILE: ${{ runner.temp }}/kdownloader-release.jks
+          KDOWNLOADER_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KDOWNLOADER_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KDOWNLOADER_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          ./gradlew --no-daemon \
+            -Pkdownloader.version="$VERSION" \
+            -Pkdownloader.versionCode="$VERSION_CODE" \
+            :androidApp:assembleRelease
+      - name: Verificar firma y preparar artefactos
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+
+          APK=$(find androidApp/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' | head -n1)
+          if [ -z "$APK" ]; then
+            echo "::error::No se encontró el APK de release."
+            exit 1
+          fi
+
+          APKSIGNER=$(find "${ANDROID_HOME}/build-tools" -type f -name apksigner | sort -V | tail -n1)
+          "$APKSIGNER" verify --print-certs "$APK" | tee dist/android-signing-certificate.txt
+          "$APKSIGNER" verify "$APK"
+
+          cp "$APK" "dist/KDownloader-${VERSION}-android-universal.apk"
+
+          {
+            echo "### Android"
+            echo "- APK firmado: \`KDownloader-${VERSION}-android-universal.apk\`"
+            echo "- Certificado: \`android-signing-certificate.txt\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: android
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+          # El APK ronda los 230 MB y es casi incompresible: empaquetarlo sin compresión ahorra minutos.
+          compression-level: 0
+
+  desktop:
+    name: Escritorio (${{ matrix.name }})
+    needs: prepare
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: Linux
+            pattern: deb
+            asset_suffix: linux-amd64
+          - os: windows-latest
+            name: Windows
+            pattern: msi
+            asset_suffix: windows-x64
+          - os: macos-latest
+            name: macOS
+            pattern: dmg
+            asset_suffix: macos
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      PACKAGE_VERSION: ${{ needs.prepare.outputs.package_version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          # El proveedor "enhanced" es un servicio comercial; el básico usa la caché estándar de GitHub y es gratis.
+          cache-provider: basic
+      - name: Instalar fakeroot (empaquetado .deb)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y fakeroot
+      - name: Asegurar WiX Toolset (empaquetado .msi)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Get-Command candle.exe -ErrorAction SilentlyContinue)) {
+            choco install wixtoolset --no-progress -y
+            $wix = Get-ChildItem "${env:ProgramFiles(x86)}\WiX Toolset*" -Directory -ErrorAction SilentlyContinue |
+              Sort-Object Name -Descending | Select-Object -First 1
+            if ($wix) {
+              "WIX=$($wix.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+            }
+          }
+      - name: Empaquetar instalador nativo
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew --no-daemon :desktopApp:packageDistributionForCurrentOS \
+            -Pkdownloader.version="$PACKAGE_VERSION"
+      - name: Preparar artefacto
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+
+          files=(desktopApp/build/compose/binaries/main/${{ matrix.pattern }}/*)
+          if [ ! -e "${files[0]}" ]; then
+            echo "::error::No se generó ningún .${{ matrix.pattern }}."
+            exit 1
+          fi
+
+          if [ "${{ matrix.pattern }}" = "dmg" ]; then
+            SUFFIX="macos-$(uname -m)"
+          else
+            SUFFIX="${{ matrix.asset_suffix }}"
+          fi
+
+          for f in "${files[@]}"; do
+            cp "$f" "dist/KDownloader-${VERSION}-${SUFFIX}.${f##*.}"
+          done
+      - uses: actions/upload-artifact@v7
+        with:
+          name: desktop-${{ matrix.asset_suffix }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+  release:
+    name: Publicar GitHub Release
+    needs: [prepare, test, android, desktop]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      # Opcionales: si no existen, el release se publica solo con checksums y atestaciones.
+      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+    steps:
+      - name: Descargar artefactos
+        uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Generar checksums SHA-256
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Firmar checksums con GPG
+        if: ${{ env.GPG_PRIVATE_KEY != '' }}
+        run: |
+          set -euo pipefail
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          KEY_ID=$(gpg --list-secret-keys --with-colons | awk -F: '/^sec:/ {print $5; exit}')
+          if [ -z "$KEY_ID" ]; then
+            echo "::error::No se pudo leer la clave GPG importada."
+            exit 1
+          fi
+          gpg --batch --yes --pinentry-mode loopback \
+            --passphrase "$GPG_PASSPHRASE" \
+            --local-user "$KEY_ID" \
+            --armor --detach-sign --output dist/SHA256SUMS.asc dist/SHA256SUMS
+          gpg --armor --export "$KEY_ID" > dist/kdownloader-signing-key.asc
+          echo "Clave GPG: $KEY_ID"
+
+      - name: Atestiguar procedencia de los binarios
+        if: ${{ github.event.repository.visibility == 'public' }}
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: "dist/*"
+
+      - name: Crear GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          name: KDownloader ${{ needs.prepare.outputs.version }}
+          prerelease: ${{ needs.prepare.outputs.prerelease == 'true' }}
+          fail_on_unmatched_files: true
+          files: dist/*
+          body: |
+            ## KDownloader ${{ needs.prepare.outputs.version }}
+
+            ### Descargas
+
+            | Plataforma | Archivo |
+            | :--- | :--- |
+            | Android (APK universal) | `KDownloader-${{ needs.prepare.outputs.version }}-android-universal.apk` |
+            | Linux (Debian/Ubuntu) | `KDownloader-${{ needs.prepare.outputs.version }}-linux-amd64.deb` |
+            | Windows (MSI) | `KDownloader-${{ needs.prepare.outputs.version }}-windows-x64.msi` |
+            | macOS (DMG) | `KDownloader-${{ needs.prepare.outputs.version }}-macos-*.dmg` |
+
+            ### Verificar la descarga
+
+            ```bash
+            sha256sum -c SHA256SUMS
+            gpg --verify SHA256SUMS.asc SHA256SUMS   # si el release incluye la firma
+            apksigner verify --print-certs KDownloader-${{ needs.prepare.outputs.version }}-android-universal.apk
+            gh attestation verify <archivo> --repo ${{ github.repository }}
+            ```
+
+            El certificado usado para firmar el APK está en `android-signing-certificate.txt`.
+
+            ### Notas
+
+            - **Escritorio**: requiere `yt-dlp` en el `PATH` para descargar de verdad. `ffmpeg` es opcional pero recomendado.
+            - **macOS**: el DMG no está notarizado, así que Gatekeeper puede pedir confirmación (clic derecho > Abrir la primera vez).
+            - **Windows**: el MSI no está firmado con Authenticode; SmartScreen puede mostrar una advertencia.

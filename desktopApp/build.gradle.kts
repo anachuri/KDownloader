@@ -15,6 +15,10 @@ dependencies {
     implementation(libs.compose.uiToolingPreview)
 }
 
+// CI overrides this with the numeric part of the release tag:
+//   ./gradlew :desktopApp:packageDistributionForCurrentOS -Pkdownloader.version=1.2.3
+val distributionVersion = providers.gradleProperty("kdownloader.version").getOrElse("1.0.0")
+
 compose.desktop {
     application {
         mainClass = "com.app.kdownloader.MainKt"
@@ -22,7 +26,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "com.app.kdownloader"
-            packageVersion = "1.0.0"
+            packageVersion = distributionVersion
 
             linux { iconFile.set(project.file("icons/icon.png")) }
             windows { iconFile.set(project.file("icons/icon.ico")) }

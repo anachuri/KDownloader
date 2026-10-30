@@ -38,8 +38,15 @@ Tests (only `:shared` has tests: template placeholders per target plus `VideoAna
 
 - Single test: `./gradlew :shared:jvmTest --tests "com.app.kdownloader.SharedLogicDesktopTest"`
 - Web tests run through Karma with headless Chrome; Chrome/Chromium must be installed.
-- No ktlint/detekt/formatting tooling and no CI workflows exist. `:androidApp:lint` is the only lint task. Verification = build + tests.
+- No ktlint/detekt/formatting tooling exists (release CI does: see below). `:androidApp:lint` is the only lint task. Verification = build + tests.
 - iOS builds require macOS/Xcode; Gradle iOS tasks fail on this Linux host.
+
+## Releases (CI)
+
+- `.github/workflows/release.yml` runs on `v*` tags (or manually) and publishes a signed Android APK, Linux `.deb`, Windows `.msi` and macOS `.dmg`, plus `SHA256SUMS`, an optional GPG signature and build-provenance attestations.
+- Android signing is configured in `androidApp/build.gradle.kts` from `KDOWNLOADER_KEYSTORE_FILE`, `KDOWNLOADER_KEYSTORE_PASSWORD`, `KDOWNLOADER_KEY_ALIAS` and `KDOWNLOADER_KEY_PASSWORD` (env wins) or a gitignored `keystore.properties`. Without a keystore the release APK stays unsigned and the workflow job fails on purpose.
+- CI overrides versions with `-Pkdownloader.version=1.2.3 -Pkdownloader.versionCode=10203` (Android) and `-Pkdownloader.version=1.2.3` (desktop jpackage); `versionCode` is `major*10000+minor*100+patch`.
+- Secrets, keystore/GPG generation and verification steps: `.github/RELEASING.md`.
 
 ## Dependencies and versions
 

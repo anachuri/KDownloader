@@ -7,6 +7,21 @@
 
 ---
 
+## Descargas
+
+Las versiones publicadas están en [GitHub Releases](https://github.com/anachuri/KDownloader/releases):
+
+| Plataforma | Formato |
+| :--- | :--- |
+| Android | APK universal firmado |
+| Linux | `.deb` (amd64) |
+| Windows | `.msi` (x64) |
+| macOS | `.dmg` (Apple Silicon, sin notarizar) |
+
+Cada release incluye `SHA256SUMS`, una firma GPG opcional (`SHA256SUMS.asc`) y atestaciones de procedencia de GitHub. Las instrucciones para verificar descargas y para publicar nuevas versiones están en [.github/RELEASING.md](.github/RELEASING.md).
+
+---
+
 ## Características Principales
 
 - **Análisis de Enlaces & Previsualización**: Inspecciona URLs para obtener información del video, duración, resoluciones de video disponibles y opciones de audio con vista previa de miniatura.
