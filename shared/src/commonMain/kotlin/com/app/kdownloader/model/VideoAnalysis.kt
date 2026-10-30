@@ -2,7 +2,6 @@ package com.app.kdownloader.model
 
 import com.app.kdownloader.platform.VideoFormatInfo
 import com.app.kdownloader.platform.VideoMetadata
-import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
 
 data class VideoQuality(
@@ -11,6 +10,12 @@ data class VideoQuality(
     val format: String,
     val size: String,
     val recommended: Boolean = false,
+    /**
+     * Height yt-dlp must cap the download at. Portrait videos expose a large `height` (e.g.
+     * 720x1280), while the label shows the short side (720p), so the download cannot rely on
+     * parsing [label].
+     */
+    val maxHeight: Int? = null,
 )
 
 data class AudioQuality(
@@ -30,14 +35,6 @@ data class VideoAnalysis(
     val audioOptions: List<AudioQuality>,
 )
 
-private data class VideoSpec(
-    val label: String,
-    val quality: String?,
-    val bitrateKbps: Int,
-    val format: String,
-    val recommended: Boolean = false,
-)
-
 private data class AudioSpec(
     val label: String,
     val detail: String,
@@ -55,14 +52,8 @@ private const val MAX_VIDEO_OPTIONS = 8
 private const val RECOMMENDED_HEIGHT = 1080
 private const val DEFAULT_AUDIO_BITRATE_KBPS = 128
 
-private val videoSpecs = listOf(
-    VideoSpec("2160p", "4K", 45_000, "WebM · VP9"),
-    VideoSpec("1440p", "2K", 25_000, "WebM · VP9"),
-    VideoSpec("1080p", "Full HD", 12_000, "MP4 · H.264", recommended = true),
-    VideoSpec("720p", "HD", 6_000, "MP4 · H.264"),
-    VideoSpec("480p", "SD", 3_000, "MP4 · H.264"),
-    VideoSpec("360p", null, 1_500, "MP4 · H.264"),
-)
+/** Shown when yt-dlp cannot know a value (Instagram does not expose the duration, for example). */
+private const val UNKNOWN_VALUE = "—"
 
 private val audioSpecs = listOf(
     AudioSpec("MP3 · 320 kbps", "Máxima calidad", 320),
@@ -74,14 +65,21 @@ private val audioSpecs = listOf(
 /**
  * Builds the analysis shown after the user submits a link.
  *
- * There is no backend yet, so titles, durations and sizes come from deterministic mock values
- * derived from the URL. Passing [metadata] (resolved by yt-dlp on desktop/Android) replaces the
- * title, duration and thumbnail with the real ones, recomputes the estimated sizes from the real
- * duration and, when yt-dlp reported the available streams, replaces the static resolution list
- * with the resolutions that actually exist for that video. The only direct network request made
- * here is the thumbnail placeholder (YouTube/Vimeo/direct image URLs).
+ * Passing [metadata] (resolved by yt-dlp on desktop/Android) replaces the title, duration and
+ * thumbnail with the real ones, recomputes the estimated sizes from the real duration and builds
+ * one resolution option per stream that actually exists for that video (labelled by their short
+ * side, so portrait reels show 720p instead of 1280p).
+ *
+ * Without usable formats there is no honest resolution to show, so the only option is
+ * [bestAvailableOption] and yt-dlp picks the real best stream on download. Nothing is fabricated:
+ * when yt-dlp reports no duration (common on Instagram) duration and sizes render as
+ * [UNKNOWN_VALUE]. The only direct network request made here is the thumbnail placeholder
+ * (YouTube/Vimeo/direct image URLs).
  */
-fun analyzeLink(rawUrl: String, metadata: VideoMetadata? = null): VideoAnalysis? {
+fun analyzeLink(
+    rawUrl: String,
+    metadata: VideoMetadata? = null,
+): VideoAnalysis? {
     val url = rawUrl.trim()
     if (!url.startsWith("http://", ignoreCase = true) && !url.startsWith("https://", ignoreCase = true)) {
         return null
@@ -96,9 +94,8 @@ fun analyzeLink(rawUrl: String, metadata: VideoMetadata? = null): VideoAnalysis?
     if (host.isBlank() || !host.contains('.')) return null
 
     val platform = platformName(host, url)
-    val seconds: Int = metadata?.durationSeconds?.takeIf { it > 0 }?.toInt()
-        ?: (180 + (url.hashCode().absoluteValue % 660))
-    val duration = formatDuration(seconds)
+    val seconds = metadata?.durationSeconds?.takeIf { it > 0 }?.toInt()
+    val duration = seconds?.let(::formatDuration) ?: UNKNOWN_VALUE
     val title = metadata?.title?.takeIf { it.isNotBlank() } ?: titleFor(platform, host)
     val thumbnailUrl = metadata?.thumbnailUrl?.takeIf { it.isNotBlank() }
         ?: thumbnailFor(url, platform)
@@ -107,7 +104,7 @@ fun analyzeLink(rawUrl: String, metadata: VideoMetadata? = null): VideoAnalysis?
     val videoOptions = if (availableFormats.any { it.isVideo }) {
         dynamicVideoOptions(availableFormats, seconds)
     } else {
-        staticVideoOptions(seconds)
+        listOf(bestAvailableOption())
     }
 
     return VideoAnalysis(
@@ -122,21 +119,20 @@ fun analyzeLink(rawUrl: String, metadata: VideoMetadata? = null): VideoAnalysis?
             AudioQuality(
                 label = spec.label,
                 detail = spec.detail,
-                size = formatSize(spec.bitrateKbps, seconds),
+                size = seconds?.let { formatSize(spec.bitrateKbps, it) } ?: UNKNOWN_VALUE,
             )
         },
     )
 }
 
-private fun staticVideoOptions(seconds: Int): List<VideoQuality> = videoSpecs.map { spec ->
-    VideoQuality(
-        label = spec.label,
-        quality = spec.quality,
-        format = spec.format,
-        size = formatSize(spec.bitrateKbps, seconds),
-        recommended = spec.recommended,
-    )
-}
+/** Fallback when yt-dlp did not report any usable stream: let yt-dlp pick the best format. */
+private fun bestAvailableOption(): VideoQuality = VideoQuality(
+    label = "Mejor calidad",
+    quality = null,
+    format = "Automática",
+    size = UNKNOWN_VALUE,
+    recommended = true,
+)
 
 /**
  * Builds one option per resolution actually offered by yt-dlp, keeping the best stream of each
@@ -145,7 +141,7 @@ private fun staticVideoOptions(seconds: Int): List<VideoQuality> = videoSpecs.ma
  */
 private fun dynamicVideoOptions(
     formats: List<VideoFormatInfo>,
-    seconds: Int,
+    seconds: Int?,
 ): List<VideoQuality> {
     val sourceAudioKbps = formats.filter { it.isAudioOnly }
         .mapNotNull { it.totalBitrateKbps }
@@ -162,23 +158,25 @@ private fun dynamicVideoOptions(
                 ),
             )
         }
-        .sortedByDescending { it.first }
+        .map { (height, format) -> Triple(height, displayHeight(format), format) }
+        .sortedByDescending { it.second }
         .take(MAX_VIDEO_OPTIONS)
-        .map { (height, format) ->
+        .map { (height, display, format) ->
             val videoKbps = format.totalBitrateKbps
                 ?: bitrateFromBytes(format.fileSizeBytes, seconds)
-                ?: estimatedVideoKbps(height)
+                ?: estimatedVideoKbps(display)
             // Video-only streams get muxed with the best audio track, so its bitrate counts too.
             val totalKbps = if (format.audioCodec == null) videoKbps + sourceAudioKbps else videoKbps
             VideoQuality(
-                label = "${height}p",
-                quality = qualityTier(height),
+                label = "${display}p",
+                quality = qualityTier(display),
                 format = formatDescription(format),
-                size = formatSize(totalKbps, seconds),
+                size = seconds?.let { formatSize(totalKbps, it) } ?: UNKNOWN_VALUE,
+                maxHeight = height,
             )
         }
 
-    if (options.isEmpty()) return staticVideoOptions(seconds)
+    if (options.isEmpty()) return listOf(bestAvailableOption())
 
     val recommendedIndex = options.indexOfFirst { heightOf(it) == RECOMMENDED_HEIGHT }
         .takeIf { it >= 0 }
@@ -188,6 +186,17 @@ private fun dynamicVideoOptions(
     return options.mapIndexed { index, option ->
         option.copy(recommended = index == recommendedIndex)
     }
+}
+
+/**
+ * Short side of the frame. Portrait reels are 720x1280, and users describe that as 720p even
+ * though yt-dlp reports `height = 1280`; [VideoQuality.maxHeight] keeps the real height so the
+ * download selector still matches.
+ */
+private fun displayHeight(format: VideoFormatInfo): Int {
+    val height = format.height ?: 0
+    val width = format.width
+    return if (width != null && width in 1 until height) width else height
 }
 
 private fun heightOf(option: VideoQuality): Int =
@@ -232,15 +241,18 @@ private fun codecName(codec: String?): String? = when {
     else -> codec.substringBefore('.').uppercase()
 }
 
-/** Uses the closest lower static tier as a fallback when yt-dlp reports no bitrate at all. */
-private fun estimatedVideoKbps(height: Int): Int =
-    videoSpecs.firstOrNull { (labelHeight(it.label) ?: 0) <= height }?.bitrateKbps
-        ?: videoSpecs.last().bitrateKbps
+/** Rough bitrate for streams that report neither `tbr` nor `filesize`, only for the MB estimate. */
+private fun estimatedVideoKbps(height: Int): Int = when {
+    height >= 2160 -> 45_000
+    height >= 1440 -> 25_000
+    height >= 1080 -> 12_000
+    height >= 720 -> 6_000
+    height >= 480 -> 3_000
+    else -> 1_500
+}
 
-private fun labelHeight(label: String): Int? = label.removeSuffix("p").trim().toIntOrNull()
-
-private fun bitrateFromBytes(bytes: Long?, seconds: Int): Int? {
-    if (bytes == null || bytes <= 0 || seconds <= 0) return null
+private fun bitrateFromBytes(bytes: Long?, seconds: Int?): Int? {
+    if (bytes == null || bytes <= 0 || seconds == null || seconds <= 0) return null
     return (bytes * 8 / seconds / 1000).toInt().takeIf { it > 0 }
 }
 

@@ -126,7 +126,7 @@ class YtDlpJvmTest {
     fun parsesFormatsLine() {
         val json = """
             [
-              {"height":1080,"fps":30,"ext":"mp4","vcodec":"avc1.640028","acodec":"none",
+              {"height":1080,"width":1920,"fps":30,"ext":"mp4","vcodec":"avc1.640028","acodec":"none",
                "tbr":1041.4,"filesize":27712345,
                "http_headers":{"User-Agent":"x"},"fragments":[{"url":"https://example.com"}]},
               {"ext":"m4a","vcodec":"none","acodec":"mp4a.40.2","tbr":129.5,"filesize":3449447},
@@ -139,6 +139,7 @@ class YtDlpJvmTest {
         assertEquals(2, formats.size)
         val video = formats.first()
         assertEquals(1080, video.height)
+        assertEquals(1920, video.width)
         assertEquals(30, video.fps)
         assertEquals("mp4", video.extension)
         assertEquals("avc1.640028", video.videoCodec)

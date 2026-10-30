@@ -142,6 +142,7 @@ internal fun parseFormatsLine(line: String): List<VideoFormatInfo> {
 
             VideoFormatInfo(
                 height = obj.doubleField("height")?.toInt()?.takeIf { it > 0 },
+                width = obj.doubleField("width")?.toInt()?.takeIf { it > 0 },
                 fps = obj.doubleField("fps")?.toInt()?.takeIf { it > 0 },
                 extension = obj.stringField("ext"),
                 videoCodec = videoCodec,

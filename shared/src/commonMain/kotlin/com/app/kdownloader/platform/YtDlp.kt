@@ -48,6 +48,7 @@ data class YtDlpInfo(
  */
 data class VideoFormatInfo(
     val height: Int? = null,
+    val width: Int? = null,
     val fps: Int? = null,
     val extension: String? = null,
     val videoCodec: String? = null,

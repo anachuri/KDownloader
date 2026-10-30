@@ -17,7 +17,8 @@ class VideoAnalysisTest {
 
         assertEquals("YouTube", analysis.platform)
         assertTrue(analysis.thumbnailUrl?.contains("dQw4w9WgXcQ") == true)
-        assertTrue(analysis.videoOptions.any { it.label == "1080p" && it.recommended })
+        assertEquals(listOf("Mejor calidad"), analysis.videoOptions.map { it.label })
+        assertTrue(analysis.videoOptions.single().recommended)
         assertEquals(4, analysis.audioOptions.size)
     }
 
@@ -113,18 +114,78 @@ class VideoAnalysisTest {
         assertEquals(listOf("720p", "360p", "144p"), analysis.videoOptions.map { it.label })
         assertEquals("WEBM · VP9", analysis.videoOptions.first().format)
         assertEquals("HD", analysis.videoOptions.first().quality)
+        assertEquals(720, analysis.videoOptions.first().maxHeight)
         assertTrue(analysis.videoOptions.first { it.recommended }.label == "720p")
         // 720p is video-only: 2500 kbps + 128 kbps of audio over 213 s.
         assertEquals("68 MB", analysis.videoOptions.first().size)
     }
 
     @Test
-    fun fallsBackToStaticOptionsWithoutFormats() {
+    fun labelsPortraitFormatsByShortSideAndHidesUnknownSize() {
+        val analysis = assertNotNull(
+            analyzeLink(
+                "https://www.instagram.com/reel/abc/",
+                VideoMetadata(
+                    title = "Reel",
+                    formats = listOf(
+                        VideoFormatInfo(
+                            height = 640,
+                            width = 360,
+                            extension = "mp4",
+                            videoCodec = "avc1.4d001e",
+                            totalBitrateKbps = 196,
+                        ),
+                        VideoFormatInfo(
+                            height = 1280,
+                            width = 720,
+                            extension = "mp4",
+                            videoCodec = "avc1.64001f",
+                            totalBitrateKbps = 947,
+                        ),
+                        VideoFormatInfo(
+                            height = null,
+                            extension = "m4a",
+                            audioCodec = "mp4a.40.5",
+                            totalBitrateKbps = 72,
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        assertEquals("—", analysis.duration)
+        assertEquals(listOf("720p", "360p"), analysis.videoOptions.map { it.label })
+        assertEquals(1280, analysis.videoOptions.first().maxHeight)
+        assertEquals("—", analysis.videoOptions.first().size)
+        assertEquals("—", analysis.audioOptions.first().size)
+        assertTrue(analysis.videoOptions.first().recommended)
+    }
+
+    @Test
+    fun avoidsFabricatedOptionsWhenMetadataIsUnavailable() {
+        val analysis = assertNotNull(
+            analyzeLink("https://www.instagram.com/reel/abc/"),
+        )
+
+        assertEquals(1, analysis.videoOptions.size)
+        val option = analysis.videoOptions.single()
+        assertEquals("Mejor calidad", option.label)
+        assertNull(option.maxHeight)
+        assertTrue(option.recommended)
+        assertEquals("—", analysis.duration)
+        assertEquals("—", option.size)
+        assertEquals("—", analysis.audioOptions.first().size)
+    }
+
+    @Test
+    fun neverFallsBackToStaticResolutions() {
         val analysis = assertNotNull(
             analyzeLink("https://example.com/video", VideoMetadata(title = "Solo título")),
         )
 
-        assertEquals(6, analysis.videoOptions.size)
-        assertEquals("1080p", analysis.videoOptions.first { it.recommended }.label)
+        assertEquals(listOf("Mejor calidad"), analysis.videoOptions.map { it.label })
+        assertTrue(analysis.videoOptions.single().recommended)
+        assertNull(analysis.videoOptions.single().maxHeight)
+        assertEquals("—", analysis.videoOptions.single().size)
     }
 }

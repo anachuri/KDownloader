@@ -237,13 +237,11 @@ fun KDownloaderScreen() {
                 null
             }
             if (analysis?.url == result.url) {
-                if (metadata != null) {
-                    val updated = analyzeLink(result.url, metadata)
-                    if (updated != null) {
-                        analysis = updated
-                        selectedVideo =
-                            updated.videoOptions.indexOfFirst { it.recommended }.coerceAtLeast(0)
-                    }
+                val updated = analyzeLink(result.url, metadata)
+                if (updated != null) {
+                    analysis = updated
+                    selectedVideo =
+                        updated.videoOptions.indexOfFirst { it.recommended }.coerceAtLeast(0)
                 }
                 loadingFormats = false
             }
@@ -360,11 +358,11 @@ fun KDownloaderScreen() {
                                 fontWeight = FontWeight.Bold,
                             )
                             Spacer(Modifier.height(4.dp))
-                            Text(
-                                "Los tamaños son aproximados; la descarga usa yt-dlp con el enlace real.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+//                            Text(
+//                                "Los tamaños son aproximados; “—” indica que yt-dlp no lo informó.",
+//                                style = MaterialTheme.typography.bodySmall,
+//                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+//                            )
                             Spacer(Modifier.height(14.dp))
 
                             if (loadingFormats) {
@@ -403,7 +401,7 @@ fun KDownloaderScreen() {
                                                     request = DownloadRequest(
                                                         url = result.url,
                                                         outputDirectory = downloadDirectory,
-                                                        maxHeight = video.maxHeightOrNull(),
+                                                        maxHeight = video.maxHeight,
                                                     ),
                                                     label = "Video ${video.label}",
                                                 )
@@ -770,6 +768,7 @@ private fun ResultHeader(result: VideoAnalysis) {
 
 @Composable
 private fun ResultDetails(result: VideoAnalysis, modifier: Modifier = Modifier) {
+    val videoCountLabel = if (result.videoOptions.size == 1) "resolución" else "resoluciones"
     Column(modifier) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Pill(
@@ -793,7 +792,7 @@ private fun ResultDetails(result: VideoAnalysis, modifier: Modifier = Modifier) 
         )
         Spacer(Modifier.height(16.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-            Metric(value = "${result.videoOptions.size}", label = "resoluciones")
+            Metric(value = "${result.videoOptions.size}", label = videoCountLabel)
             Metric(value = "${result.audioOptions.size}", label = "formatos de audio")
         }
         Spacer(Modifier.height(16.dp))
@@ -972,7 +971,11 @@ private fun DownloadOptionsCard(
     OptionCard(
         title = type.label,
         subtitle = if (isVideo) {
-            "$optionCount resoluciones disponibles"
+            if (optionCount == 1) {
+                "1 resolución disponible"
+            } else {
+                "$optionCount resoluciones disponibles"
+            }
         } else {
             "$optionCount formatos disponibles"
         },
@@ -1261,7 +1264,7 @@ private fun DownloadActions(
             }
 
             Spacer(Modifier.height(10.dp))
-            DownloadToolStatus(info = info, isDownloading = isDownloading)
+            //DownloadToolStatus(info = info, isDownloading = isDownloading)
         }
     }
 }
@@ -1467,9 +1470,6 @@ private fun DownloadSummary(
         )
     }
 }
-
-private fun VideoQuality.maxHeightOrNull(): Int? =
-    label.removeSuffix("p").trim().toIntOrNull()
 
 private fun AudioQuality.audioFormat(): String? =
     label.substringBefore('·').trim().lowercase().takeIf { it.isNotEmpty() }
