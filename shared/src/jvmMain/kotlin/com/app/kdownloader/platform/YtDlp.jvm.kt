@@ -39,10 +39,17 @@ private const val METADATA_TIMEOUT_SECONDS = 20L
 
 actual suspend fun fetchVideoMetadata(url: String): VideoMetadata? = withContext(Dispatchers.IO) {
     val executable = resolveYtDlp() ?: return@withContext null
-    val command = listOf(executable) + metadataOptions() + url
+
+    fetchMetadataWithFallback { args ->
+        runMetadataProcess(executable, args + url)
+    }
+}
+
+/** Runs one metadata extraction and returns its stdout, or `null` on timeout/launch failure. */
+private fun runMetadataProcess(executable: String, command: List<String>): String? {
     val process = runCatching {
-        ProcessBuilder(command).redirectErrorStream(true).start()
-    }.getOrNull() ?: return@withContext null
+        ProcessBuilder(listOf(executable) + command).redirectErrorStream(true).start()
+    }.getOrNull() ?: return null
 
     // The formats JSON can exceed the OS pipe buffer (~64 KiB on Linux/macOS), so stdout must be
     // drained while the process runs; waiting first would deadlock until the timeout kills it.
@@ -63,10 +70,10 @@ actual suspend fun fetchVideoMetadata(url: String): VideoMetadata? = withContext
         process.outputStream.close() // yt-dlp never reads stdin
         if (!process.waitFor(METADATA_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
             stopProcess(process)
-            return@withContext null
+            return null
         }
         reader.join(2_000)
-        parseMetadataOutput(output.toString())
+        return output.toString()
     } finally {
         if (process.isAlive) stopProcess(process)
     }

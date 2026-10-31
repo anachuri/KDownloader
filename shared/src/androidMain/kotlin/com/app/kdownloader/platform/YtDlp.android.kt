@@ -30,7 +30,7 @@ actual val supportsYtDlpDownloads: Boolean = true
 
 private const val TAG = "KDownloader"
 private const val DOWNLOAD_SUBFOLDER = "KDownloader"
-private const val METADATA_TIMEOUT_MS = 30_000L
+private const val METADATA_TIMEOUT_MS = 60_000L
 
 /** Public location the user sees; scoped storage forbids yt-dlp from writing here directly. */
 private val publishedDirectory: String
@@ -79,9 +79,17 @@ actual suspend fun probeYtDlp(): YtDlpInfo = withContext(Dispatchers.IO) {
 }
 
 actual suspend fun fetchVideoMetadata(url: String): VideoMetadata? = coroutineScope {
-    val context = AndroidAppContext.current ?: return@coroutineScope null
+    val context = AndroidAppContext.current
+    if (context == null) {
+        Log.w(TAG, "No hay contexto de Android; no se pueden leer los metadatos")
+        return@coroutineScope null
+    }
     // Reuses the same lazy bootstrap as downloads (and its 24 h update check).
-    if (ensureTools(context) != null) return@coroutineScope null
+    val initError = ensureTools(context)
+    if (initError != null) {
+        Log.w(TAG, "yt-dlp no está listo para leer metadatos: $initError")
+        return@coroutineScope null
+    }
 
     val processId = "kdownloader-meta-${UUID.randomUUID()}"
     // Cancelling (timeout or an abandoned analysis) must stop the native process, not just the
@@ -95,13 +103,14 @@ actual suspend fun fetchVideoMetadata(url: String): VideoMetadata? = coroutineSc
     }
 
     try {
-        withTimeoutOrNull(METADATA_TIMEOUT_MS) {
-            withContext(Dispatchers.IO) {
-                val request = YoutubeDLRequest(url).addCommands(metadataOptions())
-                val response = YoutubeDL.getInstance()
-                    .execute(request, processId, redirectErrorStream = true)
-                parseMetadataOutput(response.out)
+        withContext(Dispatchers.IO) {
+            val metadata = fetchMetadataWithFallback { args ->
+                runMetadataProcess(url, args, processId)
             }
+            if (metadata?.formats.isNullOrEmpty()) {
+                Log.w(TAG, "yt-dlp no devolvió formatos para $url")
+            }
+            metadata
         }
     } catch (cancellation: CancellationException) {
         throw cancellation
@@ -110,6 +119,34 @@ actual suspend fun fetchVideoMetadata(url: String): VideoMetadata? = coroutineSc
         null
     } finally {
         cancellationWatcher.cancel()
+    }
+}
+
+/**
+ * Runs a single metadata extraction and returns its stdout.
+ *
+ * Kept separate from [fetchVideoMetadata] so the fallback-client retry can run the same command
+ * twice without duplicating the process/cancellation handling.
+ */
+private suspend fun runMetadataProcess(
+    url: String,
+    args: List<String>,
+    processId: String,
+): String? = withTimeoutOrNull(METADATA_TIMEOUT_MS) {
+    withContext(Dispatchers.IO) {
+        val request = YoutubeDLRequest(url).addCommands(args)
+        // stderr must stay separate: `%(formats)j` is a single line of 100+ KB on YouTube and a
+        // Python warning interleaved into it would break the JSON parse.
+        val response = YoutubeDL.getInstance()
+            .execute(request, processId, redirectErrorStream = false)
+        if (response.out.isBlank()) {
+            Log.w(
+                TAG,
+                "yt-dlp no devolvió salida (código ${response.exitCode}): " +
+                    response.err.take(500),
+            )
+        }
+        response.out
     }
 }
 

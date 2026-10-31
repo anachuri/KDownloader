@@ -31,6 +31,29 @@ private const val PROGRESS_TEMPLATE =
         "%(progress._eta_str)s"
 
 /**
+ * YouTube clients yt-dlp must not try.
+ *
+ * When a JavaScript runtime is available (always on Android: `youtubedl-android` injects its
+ * bundled QuickJS), yt-dlp's default client list starts with the TV clients. Those currently
+ * abort the whole extraction instead of falling back when they cannot get a PO token: the bundled
+ * yt-dlp 2025.11 fails with "The page needs to be reloaded" and current releases with "Requested
+ * format is not available". Desktop has no JS runtime, so it starts with `visionos` and never hits
+ * this. Excluding the TV clients keeps the remaining defaults (`visionos`, `android_vr`/
+ * `android_sdkless`, `web`) and restores the full resolution list on both old and new yt-dlp.
+ */
+private const val YOUTUBE_CLIENT_ARGS =
+    "youtube:player_client=default,-tv,-tv_samsung,-tv_downgraded"
+
+/**
+ * Secondary YouTube client list used when the primary pass returns no video streams.
+ *
+ * Excludes TV clients and forces clients (`visionos`, `android_sdkless`, `web`) known to succeed
+ * on both older (bundled) and current yt-dlp releases without aborting.
+ */
+internal const val YOUTUBE_FALLBACK_CLIENT_ARGS =
+    "youtube:player_client=visionos,android_sdkless,web"
+
+/**
  * Builds the yt-dlp arguments shared by every platform implementation.
  *
  * The URL is intentionally *not* included: the desktop implementation appends it as the last
@@ -43,6 +66,8 @@ internal fun buildYtDlpOptions(
     add("--newline") // one line per progress tick instead of carriage-return updates
     add("--no-playlist")
     add("--no-warnings")
+    add("--extractor-args")
+    add(YOUTUBE_CLIENT_ARGS)
     add("--encoding")
     add("utf-8")
     // --print implies --quiet; --no-quiet keeps the progress stream flowing.
@@ -55,7 +80,9 @@ internal fun buildYtDlpOptions(
     add("--paths")
     add(request.outputDirectory)
     add("-o")
-    add("%(title).120B [%(id)s].%(ext)s")
+    // Both title and id are byte-truncated to prevent "File name too long" (ENAMETOOLONG) when
+    // site IDs (e.g. image URLs or long captions) are unusually large.
+    add("%(title).100B [%(id).24B].%(ext)s")
 
     val audioFormat = request.audioFormat
     if (audioFormat != null) {
@@ -88,11 +115,18 @@ internal fun buildYtDlpOptions(
  * `--print` implies `--simulate`, so nothing is downloaded. Two lines are printed: the compact
  * metadata line parsed by [parseMetadataLine] and the formats JSON parsed by [parseFormatsLine].
  * Both desktop and Android share these options so they resolve the same fields.
+ *
+ * [YOUTUBE_CLIENT_ARGS] avoids the failing TV clients (see its KDoc). `--ignore-no-formats-error`
+ * keeps `--print` working when the video exposes no downloadable format, so the title/thumbnail
+ * and whatever streams exist are still shown instead of losing all metadata.
  */
-internal fun metadataOptions(): List<String> = listOf(
+internal fun metadataOptions(clientArgs: String = YOUTUBE_CLIENT_ARGS): List<String> = listOf(
     "--skip-download",
     "--no-playlist",
     "--no-warnings",
+    "--ignore-no-formats-error",
+    "--extractor-args",
+    clientArgs,
     "--encoding",
     "utf-8",
     "--print",

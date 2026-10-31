@@ -1,5 +1,6 @@
 package com.app.kdownloader.platform
 
+import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -61,6 +62,35 @@ class YtDlpJvmTest {
 
         assertTrue(args.none { it == "--extract-audio" })
         assertEquals("bestaudio/best", args.valueAfter("--format"))
+    }
+
+    @Test
+    fun boundsOutputFileNameToAvoidEnametoolong() {
+        val args = buildYtDlpArgs("yt-dlp", base, ffmpegAvailable = true)
+
+        // Both placeholders are byte-truncated: site titles/ids can otherwise exceed the 255-byte
+        // limit of a single path component ("File name too long").
+        assertEquals("%(title).100B [%(id).24B].%(ext)s", args.valueAfter("-o"))
+    }
+
+    @Test
+    fun metadataFallbackUsesExplicitClients() {
+        val fallback = metadataOptions(YOUTUBE_FALLBACK_CLIENT_ARGS)
+        assertEquals(YOUTUBE_FALLBACK_CLIENT_ARGS, fallback.valueAfter("--extractor-args"))
+        assertTrue(YOUTUBE_FALLBACK_CLIENT_ARGS.contains("visionos"))
+        assertTrue(!YOUTUBE_FALLBACK_CLIENT_ARGS.contains("-tv"))
+    }
+
+    @Test
+    fun excludesYoutubeTvClients() {
+        val expected = "youtube:player_client=default,-tv,-tv_samsung,-tv_downgraded"
+
+        val metadata = metadataOptions()
+        assertEquals(expected, metadata.valueAfter("--extractor-args"))
+        assertTrue(metadata.contains("--ignore-no-formats-error"))
+
+        val download = buildYtDlpArgs("yt-dlp", base, ffmpegAvailable = true)
+        assertEquals(expected, download.valueAfter("--extractor-args"))
     }
 
     @Test
@@ -195,6 +225,57 @@ class YtDlpJvmTest {
         )
 
         assertTrue(message.contains("Actualiza yt-dlp"), message)
+    }
+
+    @Test
+    fun explainsFileNameTooLong() {
+        val message = describeYtDlpFailure(
+            listOf(
+                "ERROR: unable to open for writing: [Errno 36] File name too long: " +
+                    "\"/storage/emulated/0/Android/data/com.app.kdownloader/files/" +
+                    "Download/KDownloader/${"titulo".repeat(40)} [id].mp4\"",
+            ),
+            null,
+        )
+
+        assertTrue(message.contains("demasiado largo"), message)
+        assertTrue(message.contains("File name too long"), message)
+    }
+
+    @Test
+    fun retriesWithFallbackClientsWhenNoVideoStreams() = runBlocking {
+        val calls = mutableListOf<List<String>>()
+        val storyboardOnly = """
+            ${METADATA_PREFIX}Video de prueba${'\u001F'}60${'\u001F'}https://img/thumb.jpg
+            ${FORMATS_PREFIX}[{"format_id":"sb0","vcodec":"none","acodec":"none","height":90}]
+        """.trimIndent()
+        val withVideo = """
+            ${FORMATS_PREFIX}[{"format_id":"137","vcodec":"avc1","acodec":"none","height":1080,"tbr":5000,"ext":"mp4"}]
+        """.trimIndent()
+
+        val metadata = fetchMetadataWithFallback { args ->
+            calls += args
+            if (calls.size == 1) storyboardOnly else withVideo
+        }
+
+        assertEquals(2, calls.size)
+        assertEquals(metadataOptions(), calls[0])
+        assertEquals(YOUTUBE_FALLBACK_CLIENT_ARGS, calls[1].valueAfter("--extractor-args"))
+        assertEquals("Video de prueba", metadata?.title)
+        assertEquals(1080, metadata?.formats?.single { it.isVideo }?.height)
+    }
+
+    @Test
+    fun doesNotRetryWhenTheFirstPassHasVideoStreams() = runBlocking {
+        val calls = mutableListOf<List<String>>()
+
+        val metadata = fetchMetadataWithFallback { args ->
+            calls += args
+            "${FORMATS_PREFIX}[{\"format_id\":\"22\",\"vcodec\":\"avc1\",\"acodec\":\"mp4a\",\"height\":720}]"
+        }
+
+        assertEquals(1, calls.size)
+        assertEquals(720, metadata?.formats?.single()?.height)
     }
 
     @Test

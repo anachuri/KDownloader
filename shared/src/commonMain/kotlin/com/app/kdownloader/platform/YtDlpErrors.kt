@@ -44,6 +44,11 @@ internal fun describeYtDlpFailure(errors: List<String>, fallback: String?): Stri
         raw.contains("Requested format is not available", ignoreCase = true) ->
             "Este vídeo no ofrece el formato o la calidad solicitada."
 
+        raw.contains("File name too long", ignoreCase = true) ||
+            raw.contains("ENAMETOOLONG", ignoreCase = true) ->
+            "El nombre del archivo es demasiado largo para el sistema de archivos. " +
+                "Reintenta con otro enlace o acorta el título del contenido."
+
         raw.contains("Unsupported URL", ignoreCase = true) ->
             "yt-dlp no reconoce ese enlace como un medio descargable."
 
