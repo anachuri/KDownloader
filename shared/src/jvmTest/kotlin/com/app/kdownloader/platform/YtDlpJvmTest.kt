@@ -3,6 +3,7 @@ package com.app.kdownloader.platform
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -62,6 +63,39 @@ class YtDlpJvmTest {
 
         assertTrue(args.none { it == "--extract-audio" })
         assertEquals("bestaudio/best", args.valueAfter("--format"))
+    }
+
+    @Test
+    fun pointsYtDlpAtTheBundledFfmpeg() {
+        val ffmpeg = "/opt/kdownloader/ffmpeg"
+        val args = buildYtDlpArgs("yt-dlp", base, ffmpegAvailable = true, ffmpegLocation = ffmpeg)
+
+        assertEquals(ffmpeg, args.valueAfter("--ffmpeg-location"))
+    }
+
+    @Test
+    fun omitsFfmpegLocationWithoutFfmpeg() {
+        val args = buildYtDlpArgs("yt-dlp", base, ffmpegAvailable = false, ffmpegLocation = null)
+
+        assertTrue(args.none { it == "--ffmpeg-location" })
+    }
+
+    @Test
+    fun picksTheYtDlpAssetForEachPlatform() {
+        assertEquals("yt-dlp.exe", ytDlpAssetName("Windows 11", "amd64"))
+        assertEquals("yt-dlp_arm64.exe", ytDlpAssetName("Windows 11", "aarch64"))
+        assertEquals("yt-dlp_macos", ytDlpAssetName("Mac OS X", "x86_64"))
+        assertEquals("yt-dlp_linux", ytDlpAssetName("Linux", "amd64"))
+        assertEquals("yt-dlp_linux_aarch64", ytDlpAssetName("Linux", "aarch64"))
+        assertNull(ytDlpAssetName("FreeBSD", "amd64"))
+    }
+
+    @Test
+    fun comparesYtDlpVersions() {
+        assertTrue(isNewerYtDlpVersion("2026.10.26", "2025.11.12"))
+        assertTrue(isNewerYtDlpVersion("2026.10.26.1", "2026.10.26"))
+        assertFalse(isNewerYtDlpVersion("2026.10.26", "2026.10.26"))
+        assertFalse(isNewerYtDlpVersion("2025.11.12", "2026.10.26"))
     }
 
     @Test

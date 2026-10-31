@@ -62,6 +62,7 @@ internal const val YOUTUBE_FALLBACK_CLIENT_ARGS =
 internal fun buildYtDlpOptions(
     request: DownloadRequest,
     ffmpegAvailable: Boolean,
+    ffmpegLocation: String? = null,
 ): List<String> = buildList {
     add("--newline") // one line per progress tick instead of carriage-return updates
     add("--no-playlist")
@@ -70,6 +71,11 @@ internal fun buildYtDlpOptions(
     add(YOUTUBE_CLIENT_ARGS)
     add("--encoding")
     add("utf-8")
+    // A bundled ffmpeg is not on PATH, so point yt-dlp at the exact binary we ship.
+    if (ffmpegAvailable && ffmpegLocation != null) {
+        add("--ffmpeg-location")
+        add(ffmpegLocation)
+    }
     // --print implies --quiet; --no-quiet keeps the progress stream flowing.
     add("--print")
     add("after_move:$FILE_PREFIX%(filepath)s")
