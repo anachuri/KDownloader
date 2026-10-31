@@ -1281,7 +1281,7 @@ private fun DownloadToolStatus(info: YtDlpInfo?, isDownloading: Boolean) {
         info.executable == null -> "yt-dlp no está disponible."
         else -> {
             val version = info.version?.let { " $it" }.orEmpty()
-            val ffmpeg = if (info.ffmpegAvailable) "ffmpeg detectado" else "ffmpeg no instalado"
+            val ffmpeg = if (info.ffmpegAvailable) "ffmpeg detectado" else "sin ffmpeg"
             "yt-dlp$version listo · $ffmpeg"
         }
     }
@@ -1298,7 +1298,7 @@ private fun DownloadToolStatus(info: YtDlpInfo?, isDownloading: Boolean) {
         Spacer(Modifier.height(4.dp))
         Text(
             "Sin ffmpeg solo se descargan archivos combinados y el audio se guarda en su " +
-                "formato original. Instala ffmpeg para unir pistas y convertir a MP3.",
+                "formato original. Añade ffmpeg al sistema para unir pistas y convertir a MP3.",
             modifier = Modifier.fillMaxWidth(),
             style = MaterialTheme.typography.bodySmall,
             color = colors.onSurfaceVariant.copy(alpha = 0.9f),

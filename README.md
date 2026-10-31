@@ -37,7 +37,7 @@ Cada release incluye `SHA256SUMS`, una firma GPG opcional (`SHA256SUMS.asc`) y a
 
 | Plataforma | Estado de Descarga | Motor de Descarga | Notas |
 | :--- | :--- | :--- | :--- |
-| **Escritorio (Windows / macOS / Linux)** | 🟢 Real | `yt-dlp` del sistema (vía `ProcessBuilder`) | Requiere `yt-dlp` en el sistema. Se recomienda `ffmpeg` para combinación de formatos y conversión MP3. |
+| **Escritorio (Windows / macOS / Linux)** | 🟢 Real | `yt-dlp` integrado (vía `ProcessBuilder`) | El instalador incluye `yt-dlp` y `ffmpeg` verificados; no hay que instalar nada. `yt-dlp` se autoactualiza a los datos de usuario (máx. una vez al día). |
 | **Android** | 🟢 Real | `youtubedl-android` (Python + FFmpeg integrados) | Descarga automática e instalación interna de herramientas. Auto-actualización diaria de yt-dlp. |
 | **Web (Wasm / JS)** | 🟡 Prototipo UI | Simulación | Interfaz interactiva para probar el flujo de análisis y selección. |
 | **iOS** | 🟡 Prototipo UI | Simulación | Integración Compose/SwiftUI. |
@@ -47,9 +47,9 @@ Cada release incluye `SHA256SUMS`, una firma GPG opcional (`SHA256SUMS.asc`) y a
 ## Requisitos Previos
 
 ### Para Escritorio (JVM):
-Para realizar descargas reales en PC o Mac, se recomienda tener instalados en el sistema:
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp) (agregado al PATH de tu sistema).
-- [FFmpeg](https://ffmpeg.org/) (opcional, pero recomendado para unir pistas de video/audio en máxima calidad o convertir a MP3).
+No hace falta instalar nada: los instaladores publicados incluyen `yt-dlp` y `ffmpeg` verificados por checksum, y `yt-dlp` se mantiene al día automáticamente. Para desarrollo, `./gradlew :desktopApp:run` descarga esas herramientas (~120 MB) la primera vez en `desktopApp/build/desktopTools/`.
+
+Si quieres usar tu propia versión de `yt-dlp`, define `YT_DLP_PATH`; para builds más pequeños sin ffmpeg usa `-Pkdownloader.bundleFfmpeg=false`. Las versiones empaquetadas se fijan en `gradle.properties` (`kdownloader.ytdlp.version`, `kdownloader.ffmpeg.version`).
 
 ### Para Android:
 - No requiere instalar herramientas adicionales: la app empaqueta su propia versión de Python y FFmpeg.

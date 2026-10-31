@@ -153,7 +153,7 @@ gh attestation verify KDownloader-1.2.3-android-universal.apk --repo anachuri/KD
 
 ## Notas y limitaciones
 
-- **Escritorio** necesita `yt-dlp` en el `PATH`; `ffmpeg` es opcional pero recomendado. La app no los empaqueta.
+- **Escritorio** empaqueta `yt-dlp` y `ffmpeg` verificados por checksum (ver `downloadDesktopTools` en `desktopApp/build.gradle.kts` y `buildSrc/`); no requiere instalar nada. Las versiones se fijan en `gradle.properties` y `yt-dlp` se actualiza en el cliente a datos de usuario. El instalador crece ~120 MB; para builds sin ffmpeg usa `-Pkdownloader.bundleFfmpeg=false`.
 - Los instaladores de escritorio **no están firmados** con Authenticode (Windows) ni notarizados (macOS): SmartScreen y Gatekeeper pueden pedir confirmación manual.
 - Las atestaciones de procedencia (`actions/attest-build-provenance`) solo funcionan en repositorios públicos; en privados el paso se omite.
 - Los artefactos intermedios de Actions se conservan 7 días; los assets del Release son permanentes.

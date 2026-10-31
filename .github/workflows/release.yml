@@ -356,7 +356,7 @@ jobs:
 
             ### Notas
 
-            - **Escritorio**: requiere `yt-dlp` en el `PATH` para descargar de verdad. `ffmpeg` es opcional pero recomendado.
+            - **Escritorio**: incluye `yt-dlp` y `ffmpeg` verificados; no requiere instalar nada. `yt-dlp` se actualiza solo (máx. una vez al día) y la copia incluida sirve de respaldo sin conexión.
             - **macOS**: el DMG no está notarizado, así que Gatekeeper puede pedir confirmación (clic derecho > Abrir la primera vez).
             - **Windows**: el MSI no está firmado con Authenticode; SmartScreen puede mostrar una advertencia.
 
