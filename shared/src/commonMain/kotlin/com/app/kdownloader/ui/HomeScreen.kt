@@ -1471,17 +1471,18 @@ private fun DownloadSummary(
     }
 }
 
-private fun AudioQuality.audioFormat(): String? =
+// Internal (not private) so commonTest can cover the formatting without rendering Compose.
+internal fun AudioQuality.audioFormat(): String? =
     label.substringBefore('·').trim().lowercase().takeIf { it.isNotEmpty() }
 
-private fun AudioQuality.bitrateKbpsOrNull(): Int? =
+internal fun AudioQuality.bitrateKbpsOrNull(): Int? =
     Regex("""(\d+)\s*kbps""", RegexOption.IGNORE_CASE)
         .find(label)
         ?.groupValues
         ?.get(1)
         ?.toIntOrNull()
 
-private fun describeProgress(progress: DownloadEvent.Progress): String {
+internal fun describeProgress(progress: DownloadEvent.Progress): String {
     val parts = buildList {
         progress.fraction?.let { add("${(it * 100).roundToInt()}%") }
         progress.speed?.let { add(it) }
@@ -1491,14 +1492,14 @@ private fun describeProgress(progress: DownloadEvent.Progress): String {
     return parts.joinToString(" · ").ifEmpty { "Descargando…" }
 }
 
-private fun formatBytes(bytes: Long): String = when {
+internal fun formatBytes(bytes: Long): String = when {
     bytes >= 1_000_000_000 -> "${oneDecimal(bytes / 1_000_000_000.0)} GB"
     bytes >= 1_000_000 -> "${oneDecimal(bytes / 1_000_000.0)} MB"
     bytes >= 1_000 -> "${oneDecimal(bytes / 1_000.0)} KB"
     else -> "$bytes B"
 }
 
-private fun oneDecimal(value: Double): String {
+internal fun oneDecimal(value: Double): String {
     val rounded = (value * 10).roundToInt()
     return "${rounded / 10},${rounded % 10}"
 }
